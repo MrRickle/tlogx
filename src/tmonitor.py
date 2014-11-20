@@ -14,7 +14,7 @@ if notOnPi:
     dbname='./DummyStuff/tlog.db'
 else:
     dbname='/var/www/tlog.db'
-
+#add a device name to the database 
 def db_add_device(device):
     try:
         with sqlite3.connect(dbname) as conn:
@@ -73,7 +73,7 @@ def display_data(device):
 
 
 
-# get temerature
+# get temperature
 # returns None on error, or the temperature as a float
 def get_temp(devicefile):
 
@@ -125,21 +125,20 @@ def main():
 
     # get the temperature from the device file
     for file in devicefiles:
-        temperature = get_temp(file)
-        if temperature == None:
-            # Sometimes reads fail on the first attempt
-            # so we need to retry
+        try:
             temperature = get_temp(file)
-        # Store the temperature in the database
-        if temperature!= None:
-            parts = os.path.split(file)     #take off the file
-            parts2 = os.path.split(parts[0]) #and get the directory
-            device = parts2[1]
-            print "{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temperature)
-            log_temperature(device, temperature)
-                # display the contents of the database for this device
-
-    print "finished logging"
+            if temperature == None:
+                # Sometimes reads fail on the first attempt
+                # so we need to retry
+                temperature = get_temp(file)
+            # Store the temperature in the database
+            if temperature!= None:
+                parts = os.path.split(file)     #take off the file
+                parts2 = os.path.split(parts[0]) #and get the directory
+                device = parts2[1]
+                print "{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temperature)
+                log_temperature(device, temperature)
+            print "finished logging data"
 
 
 if __name__=="__main__":
