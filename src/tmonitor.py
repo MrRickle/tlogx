@@ -10,7 +10,7 @@ import glob
 notOnPi = True
 speriod=(15*60)-1
 if notOnPi:
-    dbname='./dummystuff/tlog.db'
+    dbname='./DummyStuff/tlog.db'
 else:
     dbname='/var/www/tlog.db'
 
