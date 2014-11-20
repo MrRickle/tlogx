@@ -4,6 +4,7 @@ import sqlite3
 
 import os
 import time
+import datetime
 import glob
 
 # global variables
@@ -16,29 +17,28 @@ else:
 
 def db_add_device(device):
     try:
-        conn=sqlite3.connect(dbname)
-        curs=conn.cursor()
-        cmd = "INSERT INTO devices values(('"+device+"'), ('"+device+"'))"
-        curs.execute(cmd)
-        conn.commit
-        conn.close
-        return True
+        with sqlite3.connect(dbname) as conn:
+            curs=conn.cursor()
+            cmd = "INSERT INTO devices values(('"+device+"'), ('"+device+"'))"
+            curs.execute(cmd)
+            conn.commit
+            return True
     except sqlite3.Error, e:
         print "db_add_device_error %s:" % e.args[0]
         return False
 
 def check_device(device):
     try:
-        conn=sqlite3.connect(dbname)
-        curs=conn.cursor()
-        cmd = "Select device from devices where device = '"+device+"'"
-        curs.execute(cmd)
-        data = curs.fetchone()
-        conn.close
-        if data!= None:
-            return True
-        else:
-            return db_add_device(device)
+        with sqlite3.connect(dbname) as conn:
+            curs = conn.cursor()
+            cmd = "Select device from devices where device = '"+device+"'"
+            curs.execute(cmd)
+            data = curs.fetchone()
+            conn.commit()
+            if data!= None:
+                return True
+            else:
+                return db_add_device(device)
     except sqlite3.Error, e:
         print "check_device error %s:" % e.args[0]
         return False
@@ -49,29 +49,27 @@ def log_temperature(device, temp):
 
     if not check_device(device):
         print "There was problem finding the device in the database."
+        return False
         
-    conn=sqlite3.connect(dbname)
-    curs=conn.cursor()
-    
-    cmd = "INSERT INTO temperatures values(datetime('now'), ('"+device+"'), ('"+temp+"'))"
-    curs.execute(cmd)
+    with sqlite3.connect(dbname) as conn:
+        curs=conn.cursor()
+        cmd = "INSERT INTO temperatures values('{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temp)
+        curs.execute(cmd)
+        conn.commit()
+        return True
+    return False
 
-    # commit the changes
-    conn.commit()
-
-    conn.close()
-
-
-# display the contents of the database
+# display the contents of the database for specified device
 def display_data(device):
 
-    conn=sqlite3.connect(dbname)
-    curs=conn.cursor()
-
-    cmd = "Select device from devices where device = '"+device+"'"
-    for row in curs.execute(cmd):
-        print str(row[0])+" "+str(row[1])+" "+str(row[2])
-    conn.close()
+    with sqlite3.connect(dbname) as conn:
+        curs=conn.cursor()
+        cmd = "Select * from temperatures where device = '"+device+"'"
+        for row in curs.execute(cmd):
+            for value in row:
+                print str(value),
+            print ('')    
+        conn.commit()    
 
 
 
@@ -137,12 +135,11 @@ def main():
             parts = os.path.split(file)     #take off the file
             parts2 = os.path.split(parts[0]) #and get the directory
             device = parts2[1]
-            print file+" temperature="+str(temperature)
-            if log_temperature(device, temperature):
+            print "{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temperature)
+            log_temperature(device, temperature)
                 # display the contents of the database for this device
-                display_data(device)
 
-#        time.sleep(speriod)
+    print "finished logging"
 
 
 if __name__=="__main__":
