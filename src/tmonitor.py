@@ -22,7 +22,7 @@ def db_add_device(device):
             cmd = "INSERT INTO devices values(('"+device+"'), ('"+device+"'))"
             curs.execute(cmd)
             conn.commit
-            return True
+            return True 
     except sqlite3.Error, e:
         print "db_add_device_error %s:" % e.args[0]
         return False
