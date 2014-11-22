@@ -75,10 +75,10 @@ def display_data(device):
 
 # get temperature
 # returns None on error, or the temperature as a float
-def get_temp(devicefile):
+def get_temp(device_file):
 
     try:
-        fileobj = open(devicefile,'r')
+        fileobj = open(device_file,'r')
         lines = fileobj.readlines()
         fileobj.close()
     except:
@@ -96,6 +96,22 @@ def get_temp(devicefile):
     else:
         print "There was an error getting the temperature from " + devicefile+" status="+status
         return None
+    
+    #do the actual logging of the temperature    
+
+def do_logging(device_file):
+        temperature = get_temp(device_file)
+        if temperature == None:
+            # Sometimes reads fail on the first attempt
+            # so we need to retry
+            temperature = get_temp(device_file)
+        # Store the temperature in the database
+        if temperature!= None:
+            parts = os.path.split(device_file)     #take off the file
+            parts2 = os.path.split(parts[0]) #and get the directory
+            device = parts2[1]
+            print "{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temperature)
+            log_temperature(device, temperature)
 
 
 
@@ -124,21 +140,8 @@ def main():
 #    while True:
 
     # get the temperature from the device file
-    for file in devicefiles:
-        temperature = get_temp(file)
-        if temperature == None:
-            # Sometimes reads fail on the first attempt
-            # so we need to retry
-            temperature = get_temp(file)
-        # Store the temperature in the database
-        if temperature!= None:
-            parts = os.path.split(file)     #take off the file
-            parts2 = os.path.split(parts[0]) #and get the directory
-            device = parts2[1]
-            print "{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temperature)
-            log_temperature(device, temperature)
-                # display the contents of the database for this device
-
+    for device_file in devicefiles:
+        do_logging(device_file)        # display the contents of the database for this device
     print "finished logging"
 
 
