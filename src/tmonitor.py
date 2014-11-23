@@ -235,11 +235,11 @@ def main():
     for t in loggers:
         t.start()
     print "finished starting loggers"
-    sleep(60)
-    print "cancelling"
-    for t in loggers:
-        t.cancel()
-    print "loggers cancelled"
+#    sleep(60)
+#    print "cancelling"
+#    for t in loggers:
+#        t.cancel()
+#    print "loggers cancelled"
 #    char =' '
 #    while char!='q' and char!= 'Q':
 #        char = getch()
