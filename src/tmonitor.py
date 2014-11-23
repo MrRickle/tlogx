@@ -180,7 +180,7 @@ def do_logging(device_file):
                 string = "{0} {4:5.1f} {3: <16}   loggging '{1}', '{2:3.3f}'".format (str(datetime.datetime.now())[:19], device_info[0], temperature, device_info[1], (32 + (temperature * 9/5)))
                 print (string),
                 sys.stdout.flush()
-                print "CTRL-V to quit."
+                print "CTRL-z to quit."
                 sys.stdout.flush()
                 log_temperature(device_info[0], temperature)
                 
