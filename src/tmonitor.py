@@ -177,7 +177,7 @@ def do_logging(device_file):
             time_delta_long_enough = secondssincelastlog > maxtimebetweenlogs
  #           print temperature, last_data[1],  temperature_delta_large_enough, nowdate, lastdate, time_delta_long_enough
             if temperature_delta_large_enough or time_delta_long_enough:
-                string = "{0} {4:5.1f} {3: <16}   loggging '{1}', '{2:3.3f}'".format (str(datetime.datetime.now())[:19], device_info[0], temperature, device_info[1], (32 + (temperature * 9/5)))
+                string = "{0} {4:5.1f} {3: <16}   loggging '{1}', '{2:7.3f}'".format (str(datetime.datetime.now())[:19], device_info[0], temperature, device_info[1], (32 + (temperature * 9/5)))
                 print (string),
                 sys.stdout.flush()
                 print "CTRL-z to quit."
