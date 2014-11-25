@@ -12,7 +12,7 @@ import cgitb
 speriod=(15*60)-1
 dbname='./data/tlog.db'
 cgibinFolder = ''   #set here so I can test with source code
-
+form = cgi.FieldStorage()
 
 # print the HTTP header
 def printHTTPheader():
@@ -35,23 +35,25 @@ def printHTMLHead(title, table):
 # get data from the database
 # if an interval is passed, 
 # return a list of records from the database
-def get_tdata(interval,device):
+def get_tdata(interval,device_id):
+    #print 'device_id =',device_id                                              #debugging
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
-        if interval == None:
-            cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}'".format(device)
-            curs.execute(cmd)
-        else:
-            now = str(datetime.datetime.now())
-#            now = '2014-11-23 15:59:28.628628'
-            cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device,now,interval) 
-            curs.execute(cmd)
-
+        now = str(datetime.datetime.now())
+        cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device_id,now,interval) 
+       #cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device_id,now,interval) 
+       #cmd = "SELECT strftime('%d %H:%M:%S',timestamp), temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device_id,now,interval) 
+        curs.execute(cmd)
     rows=curs.fetchall()
-
     conn.close()
-
-    return rows
+    newrows=[]
+    for row in rows:
+        dt =datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S.%f")
+        epoch = (dt- datetime.datetime(1970,1,1)).total_seconds()
+        temperature = row[1]
+        newrow = epoch,temperature
+        newrows.append(newrow)
+    return newrows
 
 
 # convert rows from database into a javascript table
@@ -59,7 +61,7 @@ def create_table(rows):
     chart_table=""
 
     for row in rows[:-1]:
-        rowstr="['{0}', {1}],\n".format(str(row[0]),str(row[1]))
+        rowstr="[{0}, {1}],\n".format(row[0],row[1])
         chart_table+=rowstr
 
     row=rows[-1]
@@ -82,7 +84,7 @@ def print_graph_script(table):
       function drawChart() {
         var data = google.visualization.arrayToDataTable([['Time', 'Temperature'],%s]);
         var options = {title: 'Temperature'};
-        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
+        var chart = new google.visualization.ScatterChart(document.getElementById('chart_div'));
         chart.draw(data, options);
       }
     </script>"""
@@ -93,24 +95,23 @@ def print_graph_script(table):
 
 
 # print the div that contains the graph
-def show_graph(device):
-    print "<h2>Temperature Chart {0}</h2>".format(device)
+def show_graph(timeinterval, tdevice):
+    print "<h2>Temperature Chart for the last {0} hours for device {2} (id={1})</h2>".format(timeinterval,tdevice[0],tdevice[1])
     print '<div id="chart_div" style="width: 1500px; height: 500px;"></div>'
 
 
 
 # connect to the db and show some stats
 # argument option is the number of hours
-def show_stats(option,device):
+def show_stats(timeinterval,tdevice):
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
 
-        if option is None:
-            option = str(24)
+        if timeinterval is None:
+            timeinterval = str(24)
         now = datetime.datetime.now()
-#       now = '2014-11-23 15:59:28.628628'
 
-        cmd="SELECT timestamp, max(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device, now, option)
+        cmd="SELECT timestamp, max(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
         curs.execute(cmd)
         rowmax=curs.fetchone()
         if rowmax is None:
@@ -118,7 +119,7 @@ def show_stats(option,device):
         else:
             rowstrmax="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmax[0]),rowmax[1], rowmax[1]*5/9+32)
 
-        cmd="SELECT timestamp, min(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device, now, option)
+        cmd="SELECT timestamp, min(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
         curs.execute(cmd)
         rowmin=curs.fetchone()
         if rowmax is None:
@@ -126,7 +127,7 @@ def show_stats(option,device):
         else:
             rowstrmin="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmin[0]),rowmin[1], rowmin[1]*5/9+32)
 
-        cmd="SELECT timestamp, avg(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device, now, option)
+        cmd="SELECT timestamp, avg(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
         curs.execute(cmd)
         rowavg=curs.fetchone()
         if rowmax is None:
@@ -151,7 +152,7 @@ def show_stats(option,device):
         print "<table>"
         print "<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>"
 
-        cmd ="SELECT timestamp, temperature FROM temperatures WHERE device = '{0}' and timestamp > datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device,now,option)
+        cmd ="SELECT timestamp, temperature FROM temperatures WHERE device = '{0}' and timestamp > datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0],now,timeinterval)
         rows=curs.execute(cmd)
         for row in rows:
             tf = float(row[1])*5/9+32
@@ -165,113 +166,92 @@ def show_stats(option,device):
 
 
 
-def print_time_selector(option):
+def print_options_selector(timeinterval,deviceid):
 
-    print """<form action="twebgui.py" method="POST">
-        Show the temperature logs for  
-        <select name="timeinterval">"""
-    if option is not None:
+    print "<form action=\"twebgui.py\" method=\"POST\">"
+    print " Show the temperature logs for "  
+    print "<select name=\"timeinterval\">"
+    if timeinterval is not None:
      
-        if option == "30m":
+        if timeinterval == "30m":
             print "<option value=\".5\" selected=\"selected\">the last 30 minutes</option>"
         else:
             print "<option value=\".5\">the last 30 minutes hours</option>"
 
-        if option == "1":
+        if timeinterval == "1":
             print "<option value=\"1\" selected=\"selected\">the last 1 hours</option>"
         else:
             print "<option value=\"1\">the last 1 hours</option>"
 
-        if option == "6":
+        if timeinterval == "6":
             print "<option value=\"6\" selected=\"selected\">the last 6 hours</option>"
         else:
             print "<option value=\"6\">the last 6 hours</option>"
 
-        if option == "12":
+        if timeinterval == "12":
             print "<option value=\"12\" selected=\"selected\">the last 12 hours</option>"
         else:
             print "<option value=\"12\">the last 12 hours</option>"
 
-        if option == "24":
+        if timeinterval == "24":
             print "<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
         else:
             print "<option value=\"24\">the last 24 hours</option>"
 
     else:
-        print """<option value=".5">the last 30 minutes</option>
-            <option value="1">the last 1 hours</option>
-            <option value="6">the last 6 hours</option>
-            <option value="12">the last 12 hours</option>
-            <option value="24" selected="selected">the last 24 hours</option>"""
-    print """        </select>
-        <input type="submit" value="Display">
-    </form>"""
-
-
-# check that the option is valid
-# and not an SQL injection
-def validate_input(option_str):
-    # check that the option string represents a number
-    if option_str.isalnum():
-        # check that the option is within a specific range
-        if int(option_str) > 0 and int(option_str) <= 24:
-            return option_str
-        else:
-            return None
-    else: 
-        return None
-
-#return the option passed to the script
-def get_option():
-    form=cgi.FieldStorage()
-    if "timeinterval" in form:
-        option = form["timeinterval"].value
-        return validate_input (option)
-    else:
-        return None
+        print "<option value=\".5\">the last 30 minutes</option>"
+        print "<option value=\"1\">the last 1 hour</option>"
+        print "<option value=\"6\">the last 6 hours</option>"
+        print "<option value=\"12\">the last 12 hours</option>"
+        print "<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
+    print "</select>"
     
+    print " for device "
     
-def print_tdevice_selector(tdevice):
-
-    print """<form action="twebgui.py" method="POST">
-        Show the temperature logs for  device 
-        <select name="tdevice">"""
+    print "<select name=\"deviceid\">"
     with sqlite3.connect(dbname) as conn:
         curs = conn.cursor()
-        cmd = "Select device from devices"
+        cmd = "Select device, friendly_name from devices"
         rows = curs.execute(cmd)
-        itemnumber=0
         for row in rows:
-            itemnumber=itemnumber+1
-            if tdevice == row[0]:
-                print "<tdevice value=\"{1}\" selected=\"selected\">{0}</tdevice>".format(row[0],itemnumber)
+            if deviceid == row[0]:
+                print "<option value=\"{0}\" selected=\"selected\">{1}</option>".format(row[0], row[1])
             else:
-                print "<tdevice value=\"{1}\">{0}/tdevice>".format(row[0],itemnumber)
+                print "<option value=\"{0}\">{1}</option>".format(row[0],row[1])
+    print "</select>"
+    print "<input type=\"submit\" value=\"Display\">"
+    print "</form>"
 
-    print """        </select>
-        <input type="submit" value="Display">
-    </form>"""
 
+#return the option passed to the script
+def get_timeinterval():
+    timeinterval = str(24)
+    if form.getvalue('timeinterval'):
+        timeinterval = form.getvalue('timeinterval')
+        if timeinterval is None:
+            timeinterval = str(24)
+    return timeinterval
+    
 
 #return the tdevice passed to the script
 def get_tdevice():
-    form=cgi.FieldStorage()
-    if "tdevice" in form:
-        tdevice = form["tdevice"].value
-        return tdevice
-    else:
-        with sqlite3.connect(dbname) as conn:
-            curs = conn.cursor()
-            cmd = "Select device from devices"
-            rows = curs.execute(cmd)
-            for row in rows:
-                return row[0]
- 
+    cmd = "Select device, friendly_name from devices order by friendly_name limit 1"
+    if form.getvalue('deviceid'):
+        deviceid = form.getvalue('deviceid')
+        cmd = "Select device, friendly_name from devices where device = '{0}' limit 1".format(deviceid)
+    #print "cmd=",cmd                                                               #debugging
+    with sqlite3.connect(dbname) as conn:
+        curs = conn.cursor()
+        rows = curs.execute(cmd)
+        for row in rows:
+            deviceid = row[0]
+            friendly_name = row[1] 
+            return deviceid,friendly_name
+        
 # make the tlogx standard date time display string
 def displaydatetime(string_date):
     dt =datetime.datetime.strptime(string_date, "%Y-%m-%d %H:%M:%S.%f")
-    return "{0:%m-%d %H}:{0:%M}:{0:%S}".format(dt)
-    
+    return "{0:%m-%d %H}:{0:%M}:{0:%S}".format(dt)    
 
 # main function
 # This is where the program starts 
@@ -279,21 +259,19 @@ def main():
     #enable debugging
     cgitb.enable()
 
-    # get options that may have been passed to this script
-    option=get_option()
- 
-
-    if option is None:
-        option = str(24)
- 
-    # get options that may have been passed to this script
-    tdevice=get_tdevice()
-
-    # get data from the database
-    records=get_tdata(option,tdevice)
-
     # print the HTTP header
     printHTTPheader()
+
+    #print form.getvalue('timeinterval'),form.getvalue('deviceid')               #debugging
+
+    # get options that may have been passed to this script
+    timeinterval = get_timeinterval()
+    #print "timeinterval",timeinterval                                           #debugging
+    tdevice = get_tdevice()
+    #print "tdevice", tdevice                                                   #debugging
+
+    # get data from the database
+    records=get_tdata(timeinterval,tdevice[0])
 
     if len(records) != 0:
         # convert the data into a table
@@ -301,6 +279,7 @@ def main():
     else:
         print "No data found"
         return
+    
 
     # start printing the page
     print "<html>"
@@ -312,10 +291,9 @@ def main():
     print "<body>"
     print "<h1>Raspberry Pi Temperature Logger</h1>"
     print "<hr>"
-    print_tdevice_selector(tdevice)
-    print_time_selector(option)
-    show_graph(tdevice)
-    show_stats(option,tdevice)
+    print_options_selector(timeinterval,tdevice[0])
+    show_graph(timeinterval, tdevice)
+    show_stats(timeinterval, tdevice)
     print "</body>"
     print "</html>"
 
