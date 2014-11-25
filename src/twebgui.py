@@ -42,8 +42,8 @@ def get_tdata(interval,device):
             cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}'".format(device)
             curs.execute(cmd)
         else:
-#           now = datetime.datetime.now
-            now = '2014-11-23 15:59:28.628628'
+            now = str(datetime.datetime.now())
+#            now = '2014-11-23 15:59:28.628628'
             cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device,now,interval) 
             curs.execute(cmd)
 
@@ -107,23 +107,32 @@ def show_stats(option,device):
 
         if option is None:
             option = str(24)
-#       now = datetime.datetime.now
-        now = '2014-11-23 15:59:28.628628'
+        now = datetime.datetime.now()
+#       now = '2014-11-23 15:59:28.628628'
 
         cmd="SELECT timestamp, max(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device, now, option)
         curs.execute(cmd)
         rowmax=curs.fetchone()
-        rowstrmax="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmax[0]),rowmax[1], rowmax[1]*5/9+32)
+        if rowmax is None:
+            rowstrmax ='NA'
+        else:
+            rowstrmax="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmax[0]),rowmax[1], rowmax[1]*5/9+32)
 
         cmd="SELECT timestamp, min(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device, now, option)
         curs.execute(cmd)
         rowmin=curs.fetchone()
-        rowstrmin="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmin[0]),rowmin[1], rowmin[1]*5/9+32)
+        if rowmax is None:
+            rowstrmin ='NA'
+        else:
+            rowstrmin="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmin[0]),rowmin[1], rowmin[1]*5/9+32)
 
         cmd="SELECT timestamp, avg(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device, now, option)
         curs.execute(cmd)
         rowavg=curs.fetchone()
-        rowstravg="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowavg[0]),rowavg[1], rowavg[1]*5/9+32)
+        if rowmax is None:
+            rowstravg ='NA'
+        else:
+            rowstravg="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowavg[0]),rowavg[1], rowavg[1]*5/9+32)
 
 
         print "<hr>"
@@ -138,14 +147,16 @@ def show_stats(option,device):
 
         print "<hr>"
 
-        print "<h2>In the last hour:</h2>"
+        print "<h2>Temperature Points:</h2>"
         print "<table>"
-        print "<tr><td><strong>Date/Time</strong></td><td><strong>Temperature</strong></td></tr>"
+        print "<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>"
 
-        cmd ="SELECT * FROM temperatures WHERE device = '{0}' and timestamp > datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device,now,option)
+        cmd ="SELECT timestamp, temperature FROM temperatures WHERE device = '{0}' and timestamp > datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(device,now,option)
         rows=curs.execute(cmd)
         for row in rows:
-            rowstr="<tr><td>{0}&emsp;&emsp;</td><td>{1}C</td></tr>".format(str(row[0]),str(row[1]))
+            tf = float(row[1])*5/9+32
+            tc = float(row[1])
+            rowstr="<tr><td>{0}&emsp;&emsp;</td><td>{1:7.2f} C</td><td>{2:7.1f} F</td></tr>".format(str(row[0]),tc,tf)
             print rowstr
         print "</table>"
 
@@ -277,8 +288,6 @@ def main():
  
     # get options that may have been passed to this script
     tdevice=get_tdevice()
-    if tdevice is None:
-        tdevice='28-Device0'
 
     # get data from the database
     records=get_tdata(option,tdevice)
