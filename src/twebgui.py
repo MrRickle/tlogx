@@ -16,20 +16,20 @@ form = cgi.FieldStorage()
 
 # print the HTTP header
 def printHTTPheader():
-    print "Content-type: text/html\n\n"
+    print("Content-type: text/html\n\n")
 
 
 # print the HTML head section
 # arguments are the page title and the table for the chart
 def printHTMLHead(title, table):
-    print "<head>"
-    print "    <title>"
-    print title
-    print "    </title>"
+    print("<head>")
+    print("    <title>")
+    print(title)
+    print("    </title>")
     
     print_graph_script(table)
 
-    print "</head>"
+    print("</head>")
 
 
 # get data from the database
@@ -89,15 +89,15 @@ def print_graph_script(table):
       }
     </script>"""
 
-    print chart_code % (table)
+    print(chart_code % (table))
 
 
 
 
 # print the div that contains the graph
 def show_graph(timeinterval, tdevice):
-    print "<h2>Temperature Chart for the last {0} hours for device {2} (id={1})</h2>".format(timeinterval,tdevice[0],tdevice[1])
-    print '<div id="chart_div" style="width: 1500px; height: 500px;"></div>'
+    print("<h2>Temperature Chart for the last {0} hours for device {2} (id={1})</h2>".format(timeinterval,tdevice[0],tdevice[1]))
+    print('<div id="chart_div" style="width: 1500px; height: 500px;"></div>')
 
 
 
@@ -136,21 +136,21 @@ def show_stats(timeinterval,tdevice):
             rowstravg="{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowavg[0]),rowavg[1], rowavg[1]*5/9+32)
 
 
-        print "<hr>"
+        print("<hr>")
 
 
-        print "<h2>Minumum temperature&nbsp</h2>"
-        print rowstrmin
-        print "<h2>Maximum temperature</h2>"
-        print rowstrmax
-        print "<h2>Average temperature</h2>"
-        print rowstravg
+        print("<h2>Minumum temperature&nbsp</h2>")
+        print(rowstrmin)
+        print("<h2>Maximum temperature</h2>")
+        print(rowstrmax)
+        print("<h2>Average temperature</h2>")
+        print(rowstravg)
 
-        print "<hr>"
+        print("<hr>")
 
-        print "<h2>Temperature Points:</h2>"
-        print "<table>"
-        print "<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>"
+        print("<h2>Temperature Points:</h2>")
+        print("<table>")
+        print("<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>")
 
         cmd ="SELECT timestamp, temperature FROM temperatures WHERE device = '{0}' and timestamp > datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0],now,timeinterval)
         rows=curs.execute(cmd)
@@ -158,69 +158,69 @@ def show_stats(timeinterval,tdevice):
             tf = float(row[1])*5/9+32
             tc = float(row[1])
             rowstr="<tr><td>{0}&emsp;&emsp;</td><td>{1:7.2f} C</td><td>{2:7.1f} F</td></tr>".format(str(row[0]),tc,tf)
-            print rowstr
-        print "</table>"
+            print(rowstr)
+        print("</table>")
 
-        print "<hr>"
+        print("<hr>")
 
 
 
 
 def print_options_selector(timeinterval,deviceid):
 
-    print "<form action=\"twebgui.py\" method=\"POST\">"
-    print " Show the temperature logs for "  
-    print "<select name=\"timeinterval\">"
+    print("<form action=\"twebgui.py\" method=\"POST\">")
+    print(" Show the temperature logs for ")  
+    print("<select name=\"timeinterval\">")
     if timeinterval is not None:
      
         if timeinterval == "30m":
-            print "<option value=\".5\" selected=\"selected\">the last 30 minutes</option>"
+            print("<option value=\".5\" selected=\"selected\">the last 30 minutes</option>")
         else:
-            print "<option value=\".5\">the last 30 minutes hours</option>"
+            print("<option value=\".5\">the last 30 minutes hours</option>")
 
         if timeinterval == "1":
-            print "<option value=\"1\" selected=\"selected\">the last 1 hours</option>"
+            print("<option value=\"1\" selected=\"selected\">the last 1 hours</option>")
         else:
-            print "<option value=\"1\">the last 1 hours</option>"
+            print("<option value=\"1\">the last 1 hours</option>")
 
         if timeinterval == "6":
-            print "<option value=\"6\" selected=\"selected\">the last 6 hours</option>"
+            print("<option value=\"6\" selected=\"selected\">the last 6 hours</option>")
         else:
-            print "<option value=\"6\">the last 6 hours</option>"
+            print("<option value=\"6\">the last 6 hours</option>")
 
         if timeinterval == "12":
-            print "<option value=\"12\" selected=\"selected\">the last 12 hours</option>"
+            print("<option value=\"12\" selected=\"selected\">the last 12 hours</option>")
         else:
-            print "<option value=\"12\">the last 12 hours</option>"
+            print("<option value=\"12\">the last 12 hours</option>")
 
         if timeinterval == "24":
-            print "<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
+            print("<option value=\"24\" selected=\"selected\">the last 24 hours</option>")
         else:
-            print "<option value=\"24\">the last 24 hours</option>"
+            print("<option value=\"24\">the last 24 hours</option>")
 
     else:
-        print "<option value=\".5\">the last 30 minutes</option>"
-        print "<option value=\"1\">the last 1 hour</option>"
-        print "<option value=\"6\">the last 6 hours</option>"
-        print "<option value=\"12\">the last 12 hours</option>"
-        print "<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
-    print "</select>"
+        print("<option value=\".5\">the last 30 minutes</option>")
+        print("<option value=\"1\">the last 1 hour</option>")
+        print("<option value=\"6\">the last 6 hours</option>")
+        print("<option value=\"12\">the last 12 hours</option>")
+        print("<option value=\"24\" selected=\"selected\">the last 24 hours</option>")
+    print("</select>")
     
-    print " for device "
+    print(" for device ")
     
-    print "<select name=\"deviceid\">"
+    print("<select name=\"deviceid\">")
     with sqlite3.connect(dbname) as conn:
         curs = conn.cursor()
         cmd = "Select device, friendly_name from devices"
         rows = curs.execute(cmd)
         for row in rows:
             if deviceid == row[0]:
-                print "<option value=\"{0}\" selected=\"selected\">{1}</option>".format(row[0], row[1])
+                print("<option value=\"{0}\" selected=\"selected\">{1}</option>".format(row[0], row[1]))
             else:
-                print "<option value=\"{0}\">{1}</option>".format(row[0],row[1])
-    print "</select>"
-    print "<input type=\"submit\" value=\"Display\">"
-    print "</form>"
+                print("<option value=\"{0}\">{1}</option>".format(row[0],row[1]))
+    print("</select>")
+    print("<input type=\"submit\" value=\"Display\">")
+    print("</form>")
 
 
 #return the option passed to the script
@@ -277,25 +277,25 @@ def main():
         # convert the data into a table
         table=create_table(records)
     else:
-        print "No data found"
+        print("No data found")
         return
     
 
     # start printing the page
-    print "<html>"
+    print("<html>")
     # print the head section including the table
     # used by the javascript for the chart
     printHTMLHead("Raspberry Pi Temperature Logger", table)
 
     # print the page body
-    print "<body>"
-    print "<h1>Raspberry Pi Temperature Logger</h1>"
-    print "<hr>"
+    print("<body>")
+    print("<h1>Raspberry Pi Temperature Logger</h1>")
+    print("<hr>")
     print_options_selector(timeinterval,tdevice[0])
     show_graph(timeinterval, tdevice)
     show_stats(timeinterval, tdevice)
-    print "</body>"
-    print "</html>"
+    print("</body>")
+    print("</html>")
 
     sys.stdout.flush()
 

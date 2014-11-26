@@ -7,12 +7,12 @@ __author__="Rick"
 __date__ ="$Nov 24, 2014 9:01:24 AM$"
 
  
-import BaseHTTPServer
-import CGIHTTPServer
+import http.server
+import http.server
 import cgitb; cgitb.enable()  ## This line enables CGI error reporting
  
-server = BaseHTTPServer.HTTPServer
-handler = CGIHTTPServer.CGIHTTPRequestHandler
+server = http.server.HTTPServer
+handler = http.server.CGIHTTPRequestHandler
 server_address = ("", 8000)
 handler.cgi_directories = ["/"]
  
