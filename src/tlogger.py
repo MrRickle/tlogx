@@ -12,7 +12,7 @@ import platform
 import sys
 if platform.platform().startswith('Win'):
     import msvcrt
-    print 'Windows'
+    print('Windows')
 
 
 class perpetualTimer():
@@ -48,8 +48,8 @@ def db_add_device(device):
             curs.execute(cmd)
             conn.commit
             return True
-    except sqlite3.Error, e:
-        print "db_add_device_error %s:" % e.args[0]
+    except sqlite3.Error as e:
+        print("db_add_device_error %s:" % e.args[0])
         return False
 
 def check_device(device):
@@ -64,8 +64,8 @@ def check_device(device):
                 return True
             else:
                 return db_add_device(device)
-    except sqlite3.Error, e:
-        print "check_device error %s:" % e.args[0]
+    except sqlite3.Error as e:
+        print("check_device error %s:" % e.args[0])
         return False
     
 
@@ -73,7 +73,7 @@ def check_device(device):
 def log_temperature(device, temp):
 
     if not check_device(device):
-        print "There was problem finding the device in the database."
+        print("There was problem finding the device in the database.")
         return False
         
     with sqlite3.connect(dbname) as conn:
@@ -92,7 +92,7 @@ def display_data(device):
         cmd = "Select * from temperatures where device = '"+device+"'"
         for row in curs.execute(cmd):
             for value in row:
-                print str(value),
+                print(str(value), end=' ')
             print ('')    
         conn.commit()    
 
@@ -107,7 +107,7 @@ def get_temp(device_file):
         lines = fileobj.readlines()
         fileobj.close()
     except:
-        print ("Exception opening "+devicefile)
+        print(("Exception opening "+devicefile))
         return None
 
     # get the status from the end of line 1 
@@ -119,7 +119,7 @@ def get_temp(device_file):
         tempvalue=float(tempstr)/1000
         return tempvalue
     else:
-        print "There was an error getting the temperature from " + devicefile+" status="+status
+        print("There was an error getting the temperature from " + devicefile+" status="+status)
         return None
     
     #do the actual logging of the temperature    
@@ -178,9 +178,9 @@ def do_logging(device_file):
  #           print temperature, last_data[1],  temperature_delta_large_enough, nowdate, lastdate, time_delta_long_enough
             if temperature_delta_large_enough or time_delta_long_enough:
                 string = "{0} {4:5.1f} {3: <16}   loggging '{1}', '{2:7.3f}'".format (str(datetime.datetime.now())[:19], device_info[0], temperature, device_info[1], (32 + (temperature * 9/5)))
-                print (string),
+                print((string), end=' ')
                 sys.stdout.flush()
-                print "CTRL-z to quit."
+                print("CTRL-z to quit.")
                 sys.stdout.flush()
                 log_temperature(device_info[0], temperature)
                 
@@ -200,7 +200,7 @@ def main():
     if devicelist==[]:
         devicelist = glob.glob('./data/28*')
         if devicelist==[]:
-            print 'no devices found'
+            print('no devices found')
             return
             
     for device in devicelist:
@@ -234,7 +234,7 @@ def main():
         loggers.append(t)
     for t in loggers:
         t.start()
-    print "finished starting loggers"
+    print("finished starting loggers")
 #    sleep(60)
 #    print "cancelling"
 #    for t in loggers:
