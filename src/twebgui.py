@@ -37,9 +37,9 @@ def printHTMLHead(title, table):
 # return a list of records from the database
 def get_tdata(interval,device_id):
     #print 'device_id =',device_id                                              #debugging
+    now = get_lastlogtime()
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
-        now = str(datetime.datetime.now())
         cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device_id,now,interval) 
        #cmd = "SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device_id,now,interval) 
        #cmd = "SELECT strftime('%d %H:%M:%S',timestamp), temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}')".format(device_id,now,interval) 
@@ -104,12 +104,12 @@ def show_graph(timeinterval, tdevice):
 # connect to the db and show some stats
 # argument option is the number of hours
 def show_stats(timeinterval,tdevice):
+    now = get_lastlogtime()
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
 
         if timeinterval is None:
             timeinterval = str(24)
-        now = datetime.datetime.now()
 
         cmd="SELECT timestamp, max(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
         curs.execute(cmd)
@@ -231,6 +231,15 @@ def get_timeinterval():
         if timeinterval is None:
             timeinterval = str(24)
     return timeinterval
+
+def get_lastlogtime():
+    cmd = "Select timestamp from temperatures order by timestamp desc limit 1"
+    with sqlite3.connect(dbname) as conn:
+        curs = conn.cursor()
+        rows = curs.execute(cmd)
+        for row in rows:
+            lastlogtime = row[0]
+            return lastlogtime
     
 
 #return the tdevice passed to the script
