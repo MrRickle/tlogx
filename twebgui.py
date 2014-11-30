@@ -1,5 +1,8 @@
 #!/usr/bin/env python2
 
+#this file gets copied to /var/www  (eventualy it should be the cgi-bin folder)
+
+
 from __future__ import division
 from __future__ import with_statement
 import datetime
@@ -22,7 +25,7 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 # global variables
 speriod=(15*60)-1
 dbname=u'./data/tlog.db'
-cgibinFolder = u''   #set here so I can test with source code
+#cgibinFolder = u''   #set here so I can test with source code
 form = cgi.FieldStorage()
 
 # print the HTTP header

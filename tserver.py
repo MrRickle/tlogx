@@ -3,18 +3,18 @@
 # To change this template file, choose Tools | Templates
 # and open the template in the editor.
 
-__author__="Rick"
-__date__ ="$Nov 24, 2014 9:01:24 AM$"
+__author__=u"Rick"
+__date__ =u"$Nov 24, 2014 9:01:24 AM$"
 
  
-import http.server
-import http.server
+import CGIHTTPServer, SimpleHTTPServer, BaseHTTPServer
+import CGIHTTPServer, SimpleHTTPServer, BaseHTTPServer
 import cgitb; cgitb.enable()  ## This line enables CGI error reporting
  
-server = http.server.HTTPServer
-handler = http.server.CGIHTTPRequestHandler
-server_address = ("", 8000)
-handler.cgi_directories = ["/"]
+server = BaseHTTPServer.HTTPServer
+handler = CGIHTTPServer.CGIHTTPRequestHandler
+server_address = (u"", 8010)
+handler.cgi_directories = [u"/"]
  
 httpd = server(server_address, handler)
 httpd.serve_forever()
