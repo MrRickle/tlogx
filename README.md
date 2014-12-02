@@ -21,3 +21,9 @@ Still needs a gui to look at the data.
 Still needs a control program to control zones or whatever.
 
 
+
+Install lighttpd
+enable cgi edit the /etc/ enabled folder 10- something
+sudo apt-get python-setuptools python-scipy python-matplotlib  (not sure it needs all of them)
+
+
