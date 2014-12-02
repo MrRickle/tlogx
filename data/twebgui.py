@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates
-from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, date2num
+from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, date2num, num2date
 from pylab import savefig
 from optparse import OptionParser
 import sqlite3
@@ -25,6 +25,7 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 # global variables
 speriod=(15*60)-1
 dbname=u'./data/tlog.db'
+#dbname=u'/home/pi/tlogx/data/tlog.db'
 #cgibinFolder = u''   #set here so I can test with source code
 form = cgi.FieldStorage()
 
@@ -46,36 +47,44 @@ def printHTMLHead(title, table):
 # get data from the database
 # if an interval is passed,
 # return a list of records from the database
-def get_tdata(interval,device_id):
+def get_tdata(interval,tdevice):
     #print 'device_id =',device_id                                              #debugging
-    now = get_lastlogtime()
+    now = get_lastlogtime(tdevice)
     dates = []
     temperatures = []
     mindate = 0
     maxdate = 0
-    mintemp = 0
-    maxtemp = 0
+    mintemp = 100
+    maxtemp = -100
 
 
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
-        cmd = u"SELECT  min(timestamp), max(timestamp), min (temperature), max(temperature) FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}') order by timestamp desc limit 200".format(device_id,now,interval)
-        curs.execute(cmd)
-        row = curs.fetchone()
-        mindate = date2num( datetime.datetime.strptime(row[0], u"%Y-%m-%d %H:%M:%S.%f"))
-        maxdate = date2num( datetime.datetime.strptime(row[1], u"%Y-%m-%d %H:%M:%S.%f"))
-        mintemp = float(row[2])
-        maxtemp = float(row[3])
 
-        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}') order by timestamp desc limit 200".format(device_id,now,interval)
+        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}') order by timestamp desc limit 200".format(tdevice[0],now,interval)
         curs.execute(cmd)
         rows=curs.fetchall()
+        endstamp = rows[0][0]
+        startstamp = rows[len(rows)-1][0]
+        endtime=date2num(datetime.datetime.strptime( endstamp, u"%Y-%m-%d %H:%M:%S.%f"))
+        starttime=date2num(datetime.datetime.strptime(startstamp, u"%Y-%m-%d %H:%M:%S.%f"))
+        actualtimespan=endtime-starttime
+
         for row in rows:
             dt =date2num(datetime.datetime.strptime(row[0], u"%Y-%m-%d %H:%M:%S.%f"))
             dates.append(dt)
-            temperatures.append(float(row[1]))
+            temp=float(row[1])
+            temperatures.append(temp)
+            if mintemp>temp:
+                mintemp=temp
+                mindate=dt
+            if maxtemp<temp:
+                maxtemp=temp
+                maxdate=dt
+        avgtemp = "NA"
 
-    return dates,temperatures,mindate,maxdate,mintemp,maxtemp
+
+    return dates,temperatures,mindate,mintemp,maxdate,maxtemp, avgtemp, starttime, endtime
 
 
 # convert rows from database into a javascript table
@@ -132,75 +141,50 @@ def print_graph_script(table):
 
 
 
+def timedeltatostring (timedelta):
+    totalleft = timedelta*24
+    hours = int (totalleft)
+    totalleft = (totalleft-hours)*60
+    minutes = int(totalleft)
+    totalleft = (totalleft-minutes)*60
+    seconds = int(totalleft)
+    str = "{0:02.0f}:{1:02.0f}:{2:02.0f}".format(hours,minutes,seconds)
+    return str
 
 # print the div that contains the graph
-def show_graph(timeinterval, tdevice):
-    print u"<h2>Temperature Chart for the last {0} hours for device {2} (id={1})</h2>".format(timeinterval,tdevice[0],tdevice[1])
-    print u'<div id="chart_div" style="width: 1500px; height: 500px;"></div>'
+def show_graph(starttime, endtime, tdevice):
 
+    print u"<h2>Temperature Chart for the last {0} for device {2} (id={1})</h2>".format(timedeltatostring(endtime-starttime),tdevice[0],tdevice[1])
+    print u'<div id="chart_div" style="width: 1500px; height: 100px;"></div>'
 
 
 # connect to the db and show some stats
 # argument option is the number of hours
-def show_stats(timeinterval,tdevice):
-    now = get_lastlogtime()
-    with sqlite3.connect(dbname) as conn:
-        curs=conn.cursor()
+def show_stats(dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp, starttime, endtime, tdevice):
 
-        if timeinterval is None:
-            timeinterval = unicode(24)
+    rowstrmax=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(maxdate),maxtemp, maxtemp*9/5+32)
+    rowstrmin=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(mindate),mintemp, mintemp*9/5+32)
 
-        cmd=u"SELECT timestamp, max(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
-        curs.execute(cmd)
-        rowmax=curs.fetchone()
-        if rowmax is None:
-            rowstrmax =u'NA'
-        else:
-            rowstrmax=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmax[0]),rowmax[1], rowmax[1]*5/9+32)
+    print u"<hr>"
 
-        cmd=u"SELECT timestamp, min(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
-        curs.execute(cmd)
-        rowmin=curs.fetchone()
-        if rowmax is None:
-            rowstrmin =u'NA'
-        else:
-            rowstrmin=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowmin[0]),rowmin[1], rowmin[1]*5/9+32)
+    print u"<h2>Minumum temperature&nbsp</h2>"
+    print rowstrmin
+    print u"<h2>Maximum temperature</h2>"
+    print rowstrmax
 
-        cmd=u"SELECT timestamp, avg(temperature) FROM temperatures WHERE device = '{0}' and timestamp>datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0], now, timeinterval)
-        curs.execute(cmd)
-        rowavg=curs.fetchone()
-        if rowmax is None:
-            rowstravg =u'NA'
-        else:
-            rowstravg=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(rowavg[0]),rowavg[1], rowavg[1]*5/9+32)
+    print u"<hr>"
 
+    print u"<h2>Temperature Points:</h2>"
+    print u"<table>"
+    print u"<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>"
 
-        print u"<hr>"
-
-
-        print u"<h2>Minumum temperature&nbsp</h2>"
-        print rowstrmin
-        print u"<h2>Maximum temperature</h2>"
-        print rowstrmax
-        print u"<h2>Average temperature</h2>"
-        print rowstravg
-
-        print u"<hr>"
-
-        print u"<h2>Temperature Points:</h2>"
-        print u"<table>"
-        print u"<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>"
-
-        cmd =u"SELECT timestamp, temperature FROM temperatures WHERE device = '{0}' and timestamp > datetime('{1}','-{2} hour') AND timestamp<=datetime('{1}')".format(tdevice[0],now,timeinterval)
-        rows=curs.execute(cmd)
-        for row in rows:
-            tf = float(row[1])*5/9+32
-            tc = float(row[1])
-            rowstr=u"<tr><td>{0}&emsp;&emsp;</td><td>{1:7.2f} C</td><td>{2:7.1f} F</td></tr>".format(unicode(row[0]),tc,tf)
-            print rowstr
-        print u"</table>"
-
-        print u"<hr>"
+    for i in range (0, len(dates)):
+        tf = float(temperatures[i])*9/5+32
+        tc = float(temperatures[i])
+        rowstr=u"<tr><td>{0}&emsp;&emsp;</td><td>{1:7.2f} C</td><td>{2:7.1f} F</td></tr>".format(displaydatetime(str(num2date(dates[i]))[:-6]),tc,tf)
+        print rowstr
+    print u"</table>"
+    print u"<hr>"
 
 
 
@@ -271,8 +255,8 @@ def get_timeinterval():
             timeinterval = unicode(24)
     return timeinterval
 
-def get_lastlogtime():
-    cmd = u"Select timestamp from temperatures order by timestamp desc limit 1"
+def get_lastlogtime(tdevice):
+    cmd = u"Select timestamp from temperatures where device = '{0}' order by timestamp desc limit 1".format(tdevice[0])
     with sqlite3.connect(dbname) as conn:
         curs = conn.cursor()
         rows = curs.execute(cmd)
@@ -296,7 +280,7 @@ def get_tdevice():
             friendly_name = row[1] 
             return deviceid,friendly_name
         
-# make the tlogx standard date time display string
+# make the tlogx standard date time display string, input must not have the tz data
 def displaydatetime(string_date):
     dt =datetime.datetime.strptime(string_date, u"%Y-%m-%d %H:%M:%S.%f")
     return u"{0:%m-%d %H}:{0:%M}:{0:%S}".format(dt)    
@@ -319,7 +303,7 @@ def main():
     #print "tdevice", tdevice                                                   #debugging
 
     # get data from the database
-    dates, temperatures, mindate, maxdate, mintemp, maxtemp = get_tdata(timeinterval,tdevice[0])
+    dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp, starttime, endtime = get_tdata(timeinterval,tdevice)
 
     if len(dates) > 2:
         # convert the data into a table
@@ -342,8 +326,8 @@ def main():
     print_options_selector(timeinterval,tdevice[0])
     print u"<img src='tchart.png'>"
 
-    show_graph(timeinterval, tdevice)
-    show_stats(timeinterval, tdevice)
+    show_graph(starttime, endtime, tdevice)
+    show_stats(dates, temperatures, str(num2date(mindate))[:-6], mintemp, str(num2date(maxdate))[:-6], maxtemp, avgtemp, starttime, endtime, tdevice )
     print u"</body>"
     print u"</html>"
 
