@@ -4,44 +4,82 @@ from __future__ import division
 from __future__ import with_statement
 import sqlite3
 
-from threading import Timer,Thread,Event
+import threading
+
 import os
 import time
+
 from time import sleep
 import datetime
 import glob
 import platform
 import sys
 from io import open
+from collections import namedtuple
 if platform.platform().startswith(u'Win'):
     import msvcrt
     print u'Windows'
 
 
-class perpetualTimer():
-
-   def __init__(self,t,hFunction,param):
-      self.t=t
-      self.hFunction = hFunction
-      self.param = param
-      self.thread = Timer(self.t,self.handle_function)
-
-   def handle_function(self):
-      self.hFunction(self.param)
-      self.thread = Timer(self.t,self.handle_function)
-      self.thread.start()
-
-   def start(self):
-      self.thread.start()
-
-   def cancel(self):
-      self.thread.cancel()
-
-
 # global variables
 notOnPi = True
 speriod=(15*60)-1
-dbname=u'./data/tlog.db'
+dbname=u'data/tlog.db'
+device_info = namedtuple("device_info",[ "device_file", "device_id", "friendly_name", "temp_check_interval", "temp_delta_min", "log_max_interval"] )
+exitFlag = False
+
+# class perpetualTimer():
+#
+#    def __init__(self,t,hFunction,param):
+#         print 'ptimer init{0}'.format(param.friendly_name)
+#         self.t=t
+#         self.hFunction = hFunction
+#         self.param = param
+#         self.thread = Timer(self.t,self.handle_function)
+#
+#    def handle_function(self):
+#         print 'ptimer handle_function {0}'.format(self.param.friendly_name)
+#         self.hFunction(self.param)
+#         self.thread = Timer(self.t,self.handle_function)
+#         self.thread.start()
+#
+#    def start(self):
+#         print'ptimer start {0}'.format(self.param.friendly_name)
+#         self.thread.start()
+#
+#    def cancel(self):
+#         self.thread.cancel()
+
+
+
+class loggingthread (threading.Thread):
+    def __init__(self, device_info):
+        threading.Thread.__init__(self)
+        self.device_info = device_info
+
+    def run(self):
+        print "Starting {0}, id={1}".format(self.device_info.friendly_name, self.device_info.device_id)
+        do_log_loop(self.device_info)
+        print "Exiting " + self.device_info.friendly_name
+
+def do_log_loop(device_info):
+    lastlogdate, lastlogtemp = get_last_temperature(device_info.device_id)
+    lastslope = 0
+    n=0
+    while not exitFlag:
+        n=n+1
+        if n>99:
+            n=0
+        print "\n'Q' to quit,  check{1:2.0f} {0: <12} ".format(device_info.friendly_name,n),
+        sys.stdout.flush()
+        lastlogdate, lastlogtemp, lastlogslope = do_logging (device_info, lastlogdate, lastlogtemp, lastslope)
+        print "check{1:2.0f} {0: <12} done. ".format(device_info.friendly_name,n),
+        sys.stdout.flush()
+
+        i=0
+        while i<device_info.temp_check_interval/1000 and not exitFlag:
+            i=i+1
+            time.sleep(1)
 
 def db_add_device(device):
     try:
@@ -73,7 +111,7 @@ def check_device(device):
     
 
 # store the temperature in the database
-def log_temperature(device, temp):
+def log_temperature(nowstring, device, temp):
 
     if not check_device(device):
         print u"There was problem finding the device in the database."
@@ -81,7 +119,7 @@ def log_temperature(device, temp):
         
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
-        cmd = u"INSERT INTO temperatures values('{0}', '{1}', '{2:2.3}')".format (datetime.datetime.now(), device, temp)
+        cmd = u"INSERT INTO temperatures values('{0}', '{1}', '{2:2.3}')".format (nowstring, device, temp)
         curs.execute(cmd)
         conn.commit()
         return True
@@ -110,7 +148,7 @@ def get_temp(device_file):
         lines = fileobj.readlines()
         fileobj.close()
     except:
-        print (u"Exception opening "+devicefile)
+        print (u"Exception opening " + device_file)
         return None
 
     # get the status from the end of line 1 
@@ -137,7 +175,9 @@ def get_device_info(device_file):
                 cmd = u"Select device, friendly_name, t_check_interval, t_delta_minimum, l_maximum_interval from devices where device = '{0}'".format(device)
                 curs.execute(cmd)
                 data = curs.fetchone()
-                return data
+                deviceinfo=device_info(device_file=device_file, device_id=data[0], friendly_name=data[1], temp_check_interval=data[2], temp_delta_min=data[3], log_max_interval=data[4] )
+            return deviceinfo
+
 
 #returns the last temperature for this device
 def get_last_temperature(device):
@@ -148,51 +188,57 @@ def get_last_temperature(device):
             curs.execute(cmd)
             data = curs.fetchone()
             if data is None:  #len(data)!=2:
-                ts = datetime.datetime.now() - datetime.timedelta(days=1)
-                tstr =unicode(ts)
-                data=tstr,0
-            return data
+                lastdatestring = unicode(datetime.datetime.now())
+                lastdate = datetime.datetime.strptime(lastdatestring,u"%Y-%m-%d %H:%M:%S.%f")
+                return lastdate,0
+            lastdate = datetime.datetime.strptime(data[0],u"%Y-%m-%d %H:%M:%S.%f")
+            return lastdate,data[1]
     except:
-                ts = datetime.datetime.now() - datetime.timedelta(days=1)
-                tstr =unicode(ts)
-                data=tstr,0
-                return data
+        nowstring = unicode(datetime.datetime.now())
+        nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
+        return nowdate,0
 
-def do_logging(device_file):
-        device_info = get_device_info(device_file)
-        temperature = get_temp(device_file)
-        if temperature == None:
-            # Sometimes reads fail on the first attempt
-            # so we need to retry
-            temperature = get_temp(device_file)
-        # Store the temperature in the database
-        if temperature!= None:
-            last_data = get_last_temperature(device_info[0])
-            temperature_delta_large_enough = abs(temperature-float(last_data[1])) > float(device_info[3])/1000
-            last_data = get_last_temperature(device_info[0])
-            temperature_delta_large_enough = abs(temperature-float(last_data[1])) > float(device_info[3])/1000
-            nowstring = unicode(datetime.datetime.now())
-            nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
-            lastdate=datetime.datetime.strptime(last_data[0],u"%Y-%m-%d %H:%M:%S.%f")
-            time_delta = nowdate - lastdate
-            secondssincelastlog = time_delta.total_seconds()
-            maxtimebetweenlogs = float(device_info[4])/1000
-            time_delta_long_enough = secondssincelastlog > maxtimebetweenlogs
- #           print temperature, last_data[1],  temperature_delta_large_enough, nowdate, lastdate, time_delta_long_enough
-            if temperature_delta_large_enough or time_delta_long_enough:
-                string = u"{0} {4:5.1f} {3: <16}   loggging '{1}', '{2:7.3f}'".format (unicode(datetime.datetime.now())[:19], device_info[0], temperature, device_info[1], (32 + (temperature * 9/5)))
-                print (string),
-                sys.stdout.flush()
-                print u"CTRL-z to quit."
-                sys.stdout.flush()
-                log_temperature(device_info[0], temperature)
-                
+def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
+    temperature = get_temp(device_info.device_file)
+    if temperature == None:      # Sometimes reads fail on the first attempt
+        temperature = get_temp(device_info.temp_check_interval)# so we need to retry
+    # Store the temperature in the database
+    if temperature!= None:
+        nowstring = unicode(datetime.datetime.now())
+        nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
+        lastdate = lastlogdate
+        time_delta = nowdate - lastdate
+        timedeltaseconds = time_delta.total_seconds()
+        newslope = (temperature - lastlogtemp)/timedeltaseconds
+        predictedtemp = lastlogtemp + (timedeltaseconds * lastlogslope)
+        tempdelta = temperature-predictedtemp
+
+        temperature_delta_large_enough = abs(tempdelta) > float(device_info.temp_delta_min/1000)
+        maxtimebetweenlogs = float(device_info.log_max_interval/1000)
+        time_delta_long_enough = timedeltaseconds > maxtimebetweenlogs
+#           print temperature, last_data[1],  temperature_delta_large_enough, nowdate, lastdate, time_delta_long_enough
+        if temperature_delta_large_enough or time_delta_long_enough:
+            log_temperature(nowstring, device_info.device_id, temperature)
+            lastlogslope = (newslope + lastlogslope)/2  #save  the slope for next time, but don't overshoot, makes it zigzag
+            lastlogdate = nowdate
+            lastlogtemp = temperature
+            string = u"{0}  {1: <12} {2:5.1f}C {3:7.3f}F".format (nowstring[:19], device_info.friendly_name, temperature, (32 + (temperature * 9/5)))
+            print (string),
+            sys.stdout.flush()
+    return lastlogdate, lastlogtemp, lastlogslope
             
 
 
 # main function
 # This is where the program starts 
 def main():
+    # workaround because datetime.datetime.strptime isn't thread safe in windows unless you run it before making the threads
+    nowstring = unicode(datetime.datetime.now())
+    nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
+    print "starting logger at {0}".format(nowdate) #just because we have it here
+    global exitFlag
+    deviceInfos = []
+    #info needed to do the next logging check
     devicefiles = []
     # enable kernel modules
     os.system(u'sudo modprobe w1-gpio')
@@ -201,7 +247,7 @@ def main():
     # search for a devices file that start with 28
     devicelist = glob.glob(u'/sys/bus/w1/devices/28*')
     if devicelist==[]:
-        devicelist = glob.glob(u'./data/28*')
+        devicelist = glob.glob(u'data/28*')
         if devicelist==[]:
             print u'no devices found'
             return
@@ -209,49 +255,25 @@ def main():
     for device in devicelist:
         devicefiles.append(device + u'/w1_slave')
         
-#    while True:
-
-
-#
-#
-#    device_info = get_device_info(devicefiles[0]) 
-#    temperature = get_temp(devicefiles[0])
-#    last_data = get_last_temperature(device_info[0])
-#    temperature_delta_large_enough = abs(temperature-float(last_data[1])) > float(device_info[3])/1000
-#    nowstring = str(datetime.datetime.now())
-#    nowdate = datetime.datetime.strptime(nowstring,"%Y-%m-%d %H:%M:%S.%f")
-#    lastdate=datetime.datetime.strptime(last_data[0],"%Y-%m-%d %H:%M:%S.%f")
-#    time_delta = nowdate - lastdate
-#    time_delta_long_enough = time_delta.total_seconds()> float (device_info[2])/1000
-#    
- 
-
-
     # get the temperature from the device file
     loggers = []
     for device_file in devicefiles:
-        device_info = get_device_info(device_file) 
-        check_interval = device_info[2]/1000
-        last_temperature = get_last_temperature(device_info[0])
-        t = perpetualTimer(check_interval,do_logging,device_file)
+        deviceinfo = get_device_info(device_file)
+        t = loggingthread(deviceinfo)
         loggers.append(t)
     for t in loggers:
         t.start()
-    print u"finished starting loggers"
-#    sleep(60)
-#    print "cancelling"
-#    for t in loggers:
-#        t.cancel()
-#    print "loggers cancelled"
-#    char =' '
-#    while char!='q' and char!= 'Q':
-#        char = getch()
-#        print char,
-#    t.cancel()
+    threading._sleep(1)
+    print u"\nfinished starting {0} loggers".format(len(loggers))
+    while not exitFlag:
+         test = raw_input("")
+         if test == 'q' or test=='Q':
+            exitFlag = True
+            print 'Exiting the logger'
+    for t in loggers:
+        t.join()
+    print "Exiting Main Thread"
+
     
 if __name__==u"__main__":
     main()
-
-
-
-
