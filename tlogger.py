@@ -4,8 +4,11 @@ from __future__ import division
 from __future__ import with_statement
 import sqlite3
 
-import threading
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+import threading
 import os
 import time
 
@@ -18,7 +21,7 @@ from io import open
 from collections import namedtuple
 if platform.platform().startswith(u'Win'):
     import msvcrt
-    print u'Windows'
+    logger.info(u'found Windows imported msvcrt')
 
 
 # global variables
@@ -58,9 +61,9 @@ class loggingthread (threading.Thread):
         self.device_info = device_info
 
     def run(self):
-        print "Starting {0}, id={1}".format(self.device_info.friendly_name, self.device_info.device_id)
+        logger.info("Starting {0}, id={1}".format(self.device_info.friendly_name, self.device_info.device_id))
         do_log_loop(self.device_info)
-        print "Exiting " + self.device_info.friendly_name
+        logger.info( "Exiting " + self.device_info.friendly_name)
 
 def do_log_loop(device_info):
     lastlogdate, lastlogtemp = get_last_temperature(device_info.device_id)
@@ -70,10 +73,9 @@ def do_log_loop(device_info):
         n=n+1
         if n>99:
             n=0
-        print "\n'Q' to quit,  check{1:2.0f} {0: <12} ".format(device_info.friendly_name,n),
-        sys.stdout.flush()
+        logger.debug( "check{1:2.0f} {0: <12} ".format(device_info.friendly_name,n))
         lastlogdate, lastlogtemp, lastlogslope = do_logging (device_info, lastlogdate, lastlogtemp, lastslope)
-        print "check{1:2.0f} {0: <12} done. ".format(device_info.friendly_name,n),
+        logger.info( "check{1:2.0f} {0: <12} done. \r".format(device_info.friendly_name,n),)
         sys.stdout.flush()
 
         i=0
@@ -90,7 +92,7 @@ def db_add_device(device):
             conn.commit
             return True
     except sqlite3.Error, e:
-        print u"db_add_device_error %s:" % e.args[0]
+        logger.critical( u"db_add_device_error %s:" % e.args[0])
         return False
 
 def check_device(device):
@@ -106,7 +108,7 @@ def check_device(device):
             else:
                 return db_add_device(device)
     except sqlite3.Error, e:
-        print u"check_device error %s:" % e.args[0]
+        logger.critical( u"check_device error %s:" % e.args[0])
         return False
     
 
@@ -114,7 +116,7 @@ def check_device(device):
 def log_temperature(nowstring, device, temp):
 
     if not check_device(device):
-        print u"There was problem finding the device in the database."
+        logger.critical( u"Could not log {0} {temp} There was problem finding the device in the database.")
         return False
         
     with sqlite3.connect(dbname) as conn:
@@ -133,7 +135,7 @@ def display_data(device):
         cmd = u"Select * from temperatures where device = '"+device+u"'"
         for row in curs.execute(cmd):
             for value in row:
-                print unicode(value),
+                logger.info(unicode(value),)
             print u''    
         conn.commit()    
 
@@ -148,7 +150,7 @@ def get_temp(device_file):
         lines = fileobj.readlines()
         fileobj.close()
     except:
-        print (u"Exception opening " + device_file)
+        logger.critical (u"Exception opening " + device_file)
         return None
 
     # get the status from the end of line 1 
@@ -160,7 +162,7 @@ def get_temp(device_file):
         tempvalue=float(tempstr)/1000
         return tempvalue
     else:
-        print u"There was an error getting the temperature from " + devicefile+u" status="+status
+        logger.critical( u"There was an error getting the temperature from " + devicefile+u" status="+status)
         return None
     
     #do the actual logging of the temperature    
@@ -223,7 +225,7 @@ def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
             lastlogdate = nowdate
             lastlogtemp = temperature
             string = u"{0}  {1: <12} {2:5.1f}C {3:7.3f}F".format (nowstring[:19], device_info.friendly_name, temperature, (32 + (temperature * 9/5)))
-            print (string),
+            logger.info (string)
             sys.stdout.flush()
     return lastlogdate, lastlogtemp, lastlogslope
             
@@ -232,10 +234,10 @@ def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
 # main function
 # This is where the program starts 
 def main():
+    logger.info('starting tlogger')
     # workaround because datetime.datetime.strptime isn't thread safe in windows unless you run it before making the threads
     nowstring = unicode(datetime.datetime.now())
     nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
-    print "starting logger at {0}".format(nowdate) #just because we have it here
     global exitFlag
     deviceInfos = []
     #info needed to do the next logging check
@@ -249,7 +251,7 @@ def main():
     if devicelist==[]:
         devicelist = glob.glob(u'data/28*')
         if devicelist==[]:
-            print u'no devices found'
+            logger.critical( u'no devices found')
             return
             
     for device in devicelist:
@@ -264,15 +266,15 @@ def main():
     for t in loggers:
         t.start()
     threading._sleep(1)
-    print u"\nfinished starting {0} loggers".format(len(loggers))
+    logger.info( u"finished starting {0} loggers".format(len(loggers)))
     while not exitFlag:
          test = raw_input("")
          if test == 'q' or test=='Q':
             exitFlag = True
-            print 'Exiting the logger'
+            logger.info('Exiting the logger')
     for t in loggers:
         t.join()
-    print "Exiting Main Thread"
+    logger.info( "Exiting Main Thread")
 
     
 if __name__==u"__main__":
