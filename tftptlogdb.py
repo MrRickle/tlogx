@@ -2,22 +2,43 @@
 __author__ = 'rick'
 import ftplib
 from ftplib import FTP
-
+import logging
+import datetime
 import os
+
+def getSize(fileobject):
+    fileobject.seek(0,2) # move the cursor to the end of the file
+    size = fileobject.tell()
+    fileobject.seek(0) # move back to the beginning
+    return size
+
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(message)s')
+logger = logging.getLogger(__name__)
+logger.debug('starting program')
 
 spath = u'data'
 filepath = u'./data/'
-print (os.listdir(filepath))
 filename = u'tlog.db'
-ftp = ftplib.FTP("ftp.hallocks.us")
-ftp.login("tlogx@hallocks.us", "rlhTiiX@7")
+ftpsite = "ftp.hallocks.us"
+user = "tlogx@hallocks.us"
+password = "rlhTiiX@7"
+nowstring = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+parts = filename.split('.')
+destfilename = parts[0]+nowstring+'.'+parts[1]
+logger.debug('starting ftp from {0} to {1}'.format(filepath+filename, user+'@'+ftpsite+' '+spath))
+ftp = ftplib.FTP(ftpsite)
+ftp.login(user, password)
 ftp.cwd(spath)  #directory to store file in
-print ('Before')
-ftp.retrlines('LIST')
-#os.chdir(r"\\windows\folder\which\has\file")
+logger.debug ('logged in')
+starttime = datetime.datetime.strptime(str(datetime.datetime.now()),u"%Y-%m-%d %H:%M:%S.%f")
 myfile = open(filepath+filename, 'rb')
-ftp.storbinary('STOR '+filename, myfile)
+filesize = getSize(myfile)
+ftp.storbinary('STOR '+destfilename, myfile)
 myfile.close()
-print ('After')
-ftp.retrlines('LIST')
+endtime = datetime.datetime.strptime(str(datetime.datetime.now()),u"%Y-%m-%d %H:%M:%S.%f")
+copytime = endtime - starttime
+seconds = copytime.total_seconds()
+logger.debug('It took {0} sec to copy {1} bytes from {2} to {3}'.format(seconds, filesize, filepath+filename, user+'@'+ftpsite+' '+spath+'/'+destfilename))
+
 

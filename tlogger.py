@@ -5,7 +5,7 @@ from __future__ import with_statement
 import sqlite3
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(message)s')
 logger = logging.getLogger(__name__)
 
 import threading
@@ -30,34 +30,13 @@ speriod=(15*60)-1
 dbname=u'data/tlog.db'
 device_info = namedtuple("device_info",[ "device_file", "device_id", "friendly_name", "temp_check_interval", "temp_delta_min", "log_max_interval"] )
 exitFlag = False
-
-# class perpetualTimer():
-#
-#    def __init__(self,t,hFunction,param):
-#         print 'ptimer init{0}'.format(param.friendly_name)
-#         self.t=t
-#         self.hFunction = hFunction
-#         self.param = param
-#         self.thread = Timer(self.t,self.handle_function)
-#
-#    def handle_function(self):
-#         print 'ptimer handle_function {0}'.format(self.param.friendly_name)
-#         self.hFunction(self.param)
-#         self.thread = Timer(self.t,self.handle_function)
-#         self.thread.start()
-#
-#    def start(self):
-#         print'ptimer start {0}'.format(self.param.friendly_name)
-#         self.thread.start()
-#
-#    def cancel(self):
-#         self.thread.cancel()
-
+restartFlag = False
+mainlooplock = threading.Lock()
 
 
 class loggingthread (threading.Thread):
     def __init__(self, device_info):
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self,name=device_info.friendly_name)
         self.device_info = device_info
 
     def run(self):
@@ -69,7 +48,7 @@ def do_log_loop(device_info):
     lastlogdate, lastlogtemp = get_last_temperature(device_info.device_id)
     lastslope = 0
     n=0
-    while not exitFlag:
+    while not (exitFlag or restartFlag):
         n=n+1
         if n>99:
             n=0
@@ -79,7 +58,7 @@ def do_log_loop(device_info):
         sys.stdout.flush()
 
         i=0
-        while i<device_info.temp_check_interval/1000 and not exitFlag:
+        while i<device_info.temp_check_interval/1000 and not (exitFlag or restartFlag):
             i=i+1
             time.sleep(1)
 
@@ -169,6 +148,10 @@ def get_temp(device_file):
 
 #returns device, friendly_name, temperature_check_interval(ms), temperature_minimum_delta (Celcius*1000), log max interval
 def get_device_info(device_file):
+            """
+
+            :rtype : object[]
+            """
             parts = os.path.split(device_file)     #take off the file
             parts2 = os.path.split(parts[0]) #and get the directory
             device = parts2[1]
@@ -224,11 +207,34 @@ def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
             lastlogslope = (newslope + lastlogslope)/2  #save  the slope for next time, but don't overshoot, makes it zigzag
             lastlogdate = nowdate
             lastlogtemp = temperature
-            string = u"{0}  {1: <12} {2:5.1f}C {3:7.3f}F".format (nowstring[:19], device_info.friendly_name, temperature, (32 + (temperature * 9/5)))
+            string = u"{0: <12} {1:5.1f}C {2:7.1f}F".format (device_info.friendly_name, temperature, (32 + (temperature * 9/5)))
             logger.info (string)
             sys.stdout.flush()
     return lastlogdate, lastlogtemp, lastlogslope
-            
+
+def get_devicefileslist():
+    logger.debug("getting devicefileslist")
+    devicefiles = []
+    # search for a devices file that start with 28
+    devicelist = glob.glob(u'/sys/bus/w1/devices/28*')
+    if devicelist==[]:
+        devicelist = glob.glob(u'data/28*')
+        if devicelist==[]:
+            logger.critical( u'no devices found')
+            return
+    threading._sleep(1)
+    for device in devicelist:
+        devicefiles.append(device + u'/w1_slave')
+    return devicefiles
+
+#returns True if the two lists are the same
+def comparedevicefileslists(df1,df2):
+    if len(df1)!=len(df2):
+        return False
+    for i in xrange (len(df1)):
+        if df1[i] != df2[i]:
+            return False
+    return True
 
 
 # main function
@@ -239,39 +245,69 @@ def main():
     nowstring = unicode(datetime.datetime.now())
     nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
     global exitFlag
-    deviceInfos = []
-    #info needed to do the next logging check
-    devicefiles = []
+    exitFlag= False
+    global restartFlag
+    restartFlag = False
     # enable kernel modules
     os.system(u'sudo modprobe w1-gpio')
     os.system(u'sudo modprobe w1-therm')
- 
-    # search for a devices file that start with 28
-    devicelist = glob.glob(u'/sys/bus/w1/devices/28*')
-    if devicelist==[]:
-        devicelist = glob.glob(u'data/28*')
-        if devicelist==[]:
-            logger.critical( u'no devices found')
-            return
-            
-    for device in devicelist:
-        devicefiles.append(device + u'/w1_slave')
-        
-    # get the temperature from the device file
     loggers = []
-    for device_file in devicefiles:
-        deviceinfo = get_device_info(device_file)
-        t = loggingthread(deviceinfo)
-        loggers.append(t)
-    for t in loggers:
-        t.start()
-    threading._sleep(1)
-    logger.info( u"finished starting {0} loggers".format(len(loggers)))
+    devicefiles = []
+    startLoggers = True
+
+
     while not exitFlag:
-         test = raw_input("")
-         if test == 'q' or test=='Q':
-            exitFlag = True
-            logger.info('Exiting the logger')
+        with mainlooplock:
+
+            logger.debug('mainlooplock started')
+
+            if len(loggers) != len(devicefiles):
+                logger.debug('loggers count ({0}) != device files count({}) setting start loggers'.format(len(loggers),len(devicefiles)))
+                startLoggers = True         #something changed force a restart
+
+            newdevicefiles = get_devicefileslist()
+            if not comparedevicefileslists(newdevicefiles,devicefiles):  #returns true if they are the same
+                logger.debug('devicefiles changed, setting start loggers')
+                startLoggers = True
+
+            #if they are not the same we will restart everything
+            if startLoggers:
+                for thread in threading.enumerate():
+                    logger.debug(thread.name)
+
+                devicefiles = newdevicefiles
+                if len(loggers)>0:
+                    restartFlag = True
+                    logger.debug("stopping {0} loggers".format(len(loggers)))
+                    for thread in threading.enumerate():
+                        if thread is not threading.currentThread():
+                            logger.debug('waiting for '+thread.name)
+                            thread.join()
+                    loggers = []
+                    restartFlag = False
+                    logger.info( "loggers stopped")
+
+                for devicefile in devicefiles:
+                    deviceinfo = get_device_info(devicefile)
+                    t = loggingthread(deviceinfo)
+                    loggers.append(t)
+                    logger.debug('added '+deviceinfo.friendly_name)
+
+                for t in loggers:
+                    t.start()
+                logger.info( u"finished starting {0} loggers".format(len(loggers)))
+                startLoggers = False
+            logger.debug('checking if {} loggers are alive'.format(len(loggers)))
+            for t in loggers:
+                if not t.isAlive():
+                    logger.debug(t.name + ' is not alive')
+                    startLoggers = True
+
+        logger.debug('mainlooplock done')
+        # test = raw_input("")
+        # if test == 'q' or test=='Q':
+        #     exitFlag = True
+    logger.info('Exiting the logger')
     for t in loggers:
         t.join()
     logger.info( "Exiting Main Thread")
