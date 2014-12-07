@@ -17,20 +17,22 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(message)s')
 logger = logging.getLogger(__name__)
 logger.debug('starting program')
 
-spath = u'data'
+spath = u'./'
 filepath = u'./data/'
 filename = u'tlog.db'
 ftpsite = "ftp.hallocks.us"
-user = "tlogx@hallocks.us"
+user = "tlogxdata@hallocks.us"
 password = "rlhTiiX@7"
 nowstring = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 parts = filename.split('.')
 destfilename = parts[0]+nowstring+'.'+parts[1]
 logger.debug('starting ftp from {0} to {1}'.format(filepath+filename, user+'@'+ftpsite+' '+spath))
 ftp = ftplib.FTP(ftpsite)
+logger.debug('logging in')
 ftp.login(user, password)
-ftp.cwd(spath)  #directory to store file in
 logger.debug ('logged in')
+ftp.cwd(spath)  #directory to store file in
+logger.debug ('directory changed to '+spath)
 starttime = datetime.datetime.strptime(str(datetime.datetime.now()),u"%Y-%m-%d %H:%M:%S.%f")
 myfile = open(filepath+filename, 'rb')
 filesize = getSize(myfile)
