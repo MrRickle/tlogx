@@ -64,9 +64,12 @@ def do_log_loop(device_info):
 
 def db_add_device(device):
     try:
+        t_check_interval = '15000'  #15 seconds
+        t_delta_minimum = '180'  # .1 degree F
+        log_maximum_interval = '3600000'  # 1 hour
         with sqlite3.connect(dbname) as conn:
             curs=conn.cursor()
-            cmd = u"INSERT INTO devices values(('"+device+u"'), ('"+device+u"'))"
+            cmd = u"INSERT INTO devices values('{0}', '{1}','{2}', '{3}', '{4}')".format(device, device[3:],t_check_interval, t_delta_minimum, log_maximum_interval) #take off the 28- for the friendly name,
             curs.execute(cmd)
             conn.commit
             return True
@@ -155,13 +158,27 @@ def get_device_info(device_file):
             parts = os.path.split(device_file)     #take off the file
             parts2 = os.path.split(parts[0]) #and get the directory
             device = parts2[1]
-            with sqlite3.connect(dbname) as conn:
-                curs=conn.cursor()
-                cmd = u"Select device, friendly_name, t_check_interval, t_delta_minimum, l_maximum_interval from devices where device = '{0}'".format(device)
-                curs.execute(cmd)
-                data = curs.fetchone()
-                deviceinfo=device_info(device_file=device_file, device_id=data[0], friendly_name=data[1], temp_check_interval=data[2], temp_delta_min=data[3], log_max_interval=data[4] )
-            return deviceinfo
+            try:
+                with sqlite3.connect(dbname) as conn:
+                    curs=conn.cursor()
+                    cmd = u"Select device, friendly_name, t_check_interval, t_delta_minimum, l_maximum_interval from devices where device = '{0}'".format(device)
+                    curs.execute(cmd)
+                    data = curs.fetchone()
+                    deviceinfo=device_info(device_file=device_file, device_id=data[0], friendly_name=data[1], temp_check_interval=data[2], temp_delta_min=data[3], log_max_interval=data[4] )
+                return deviceinfo
+            except:
+                logger.warn("device not in database, creating it.")
+                db_add_device(device)      #and try again
+                with sqlite3.connect(dbname) as conn:
+                    curs=conn.cursor()
+                    cmd = u"Select device, friendly_name, t_check_interval, t_delta_minimum, l_maximum_interval from devices where device = '{0}'".format(device)
+                    curs.execute(cmd)
+                    data = curs.fetchone()
+                    deviceinfo=device_info(device_file=device_file, device_id=data[0], friendly_name=data[1], temp_check_interval=data[2], temp_delta_min=data[3], log_max_interval=data[4] )
+                return deviceinfo
+
+
+
 
 
 #returns the last temperature for this device
