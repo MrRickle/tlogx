@@ -54,7 +54,7 @@ def do_log_loop(device_info):
             n=0
         logger.debug( "check{1:2.0f} {0: <12} ".format(device_info.friendly_name,n))
         lastlogdate, lastlogtemp, lastlogslope = do_logging (device_info, lastlogdate, lastlogtemp, lastslope)
-        logger.info( "check{1:2.0f} {0: <12} done. \r".format(device_info.friendly_name,n),)
+        logger.debug( "check{1:2.0f} {0: <12} done. \r".format(device_info.friendly_name,n),)
         sys.stdout.flush()
 
         i=0
