@@ -1,4 +1,5 @@
-#!/usr/bin/env python2
+#!/home/rickldftp/anaconda/bin/python
+#!/C:Users\Rick\Anaconda\bin\python
 
 #this file gets copied to /var/www  (eventualy it should be the cgi-bin folder)
 
@@ -18,14 +19,21 @@ import sqlite3
 import sys
 import cgi
 import cgitb
+import os.path
+import requests
+
 import io
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 
 
 # global variables
 speriod=(15*60)-1
-dbname=u'./data/tlog.db'
-#dbname=u'/home/pi/tlogx/data/tlog.db'
+
+dbname=u'../tlogx/data/tlog.db' #look for it in our godaddy location
+if not os.path.isfile(dbname): # not there
+    dbname=u'tlog.db'          #look in the folder we are in.
+
+#dbname=u'tlog.db'
 #cgibinFolder = u''   #set here so I can test with source code
 form = cgi.FieldStorage()
 
@@ -61,7 +69,7 @@ def get_tdata(interval,tdevice):
     with sqlite3.connect(dbname) as conn:
         curs=conn.cursor()
 
-        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}') order by timestamp desc limit 200".format(tdevice[0],now,interval)
+        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}') order by timestamp desc limit 10000".format(tdevice[0],now,interval)
         curs.execute(cmd)
         rows=curs.fetchall()
         endstamp = rows[0][0]
@@ -87,33 +95,42 @@ def get_tdata(interval,tdevice):
     return dates,temperatures,mindate,mintemp,maxdate,maxtemp, avgtemp, starttime, endtime
 
 
+
 # convert rows from database into a javascript table
 def create_table(dates,temperatures, mindate, maxdate, mintemp, maxtemp):
+    def Tf(Tc):
+        return (Tc*9./5.)+32
+    def update_ax2(ax):
+        y1, y2 = ax.get_ylim()
+        ax2.set_ylim(Tf(y1), Tf(y2))
+        ax2.figure.canvas.draw()
 
     # majorLocator   = MultipleLocator((maxdate-mindate)/20)
     # majorFormatter = FormatStrFormatter('%D')
     # minorLocator   = MultipleLocator((maxdate-mindate)/5)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots() #ax is the Celsius scale
+    ax2 = ax.twinx()         #ax2 is the Fahrenheit scale
+    ax.callbacks.connect("ylim_changed", update_ax2)
     ax.plot_date(dates, temperatures, u'-')
     ax.autoscale_view()
     # ax.xaxis.set_major_locator(majorLocator)
     # ax.xaxis.set_major_formatter(majorFormatter)
-    #
-    # #for the minor ticks, use no labels; default NullFormatter
+    
+    #for the minor ticks, use no labels; default NullFormatter
     # ax.xaxis.set_minor_locator(minorLocator)
 
     ax.grid(True)
 
     fig.autofmt_xdate()
-    savefig(u'tchart.png', bbox_inches=u'tight')
+    savefig(u'../tchart.png', bbox_inches=u'tight')
 # # Save the image to buffer
-# buf = io.BytesIO()
-# fig.savefig(buf, format='png')
-# out = buf.getvalue()
-# buf.close()
-# print ('Content-Type: image/png\n')
-# print (out)
+    #buf = io.BytesIO()
+    #fig.savefig(buf, format='png')
+    #out = buf.getvalue()
+    #buf.close()
+    #print ('Content-Type: image/png\n')
+    #print (out)
 
 
 
@@ -220,6 +237,12 @@ def print_options_selector(timeinterval,deviceid):
             print u"<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
         else:
             print u"<option value=\"24\">the last 24 hours</option>"
+        ti = int(timeinterval)
+        strti = str(ti)
+        if (ti > 0) and (ti < 100):
+            print u"<option value=\""+strti+"\"selected=\"selected\">the last "+strti+" hours</option>"
+
+
 
     else:
         print u"<option value=\".5\">the last 30 minutes</option>"
@@ -324,7 +347,7 @@ def main():
     print u"<h1>Raspberry Pi Temperature Logger</h1>"
     print u"<hr>"
     print_options_selector(timeinterval,tdevice[0])
-    print u"<img src='tchart.png'>"
+    print u"<img src='../tchart.png'>"
 
     show_graph(starttime, endtime, tdevice)
     show_stats(dates, temperatures, str(num2date(mindate))[:-6], mintemp, str(num2date(maxdate))[:-6], maxtemp, avgtemp, starttime, endtime, tdevice )
@@ -335,7 +358,6 @@ def main():
 
 if __name__==u"__main__":
     main()
-
 
 
 
