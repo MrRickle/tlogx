@@ -21,21 +21,38 @@ import cgi
 import cgitb
 import os.path
 import requests
+import dateutil.parser as dparser
 
 import io
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+import glob
+import ntpath
+import logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(message)s')
+logger = logging.getLogger(__name__)
 
 
 # global variables
 speriod=(15*60)-1
+dbfile = None
 
-dbname=u'../tlogx/data/tlog.db' #look for it in our godaddy location
-if not os.path.isfile(dbname): # not there
-    dbname=u'tlog.db'          #look in the folder we are in.
-
-#dbname=u'tlog.db'
-#cgibinFolder = u''   #set here so I can test with source code
 form = cgi.FieldStorage()
+
+#gets the database path and list of database names in it.
+def get_dbnames():
+    logger.debug("getting dblist")
+    dbfiles = sorted(glob.glob(u'../tlogx/data/*.db'))
+    if dbfiles == None or len(dbfiles)==0:
+        dbfiles = sorted(glob.glob(u'*.db'))
+    # search for a devices file that start with 28
+    if dbfiles==[]:
+        logger.critical( u'no databases found')
+        return
+    path = ntpath.split(dbfiles[0])[0]
+    dbnames = []
+    for dbfile in dbfiles:
+        dbnames.append(ntpath.split(dbfile)[1])
+    return path, dbnames
 
 # print the HTTP header
 def printHTTPheader():
@@ -55,29 +72,20 @@ def printHTMLHead(title, table):
 # get data from the database
 # if an interval is passed,
 # return a list of records from the database
-def get_tdata(interval,tdevice):
-    #print 'device_id =',device_id                                              #debugging
-    now = get_lastlogtime(tdevice)
-    dates = []
+def get_tdata(tdevice, starttime, endtime):
+    global dbfile
     temperatures = []
-    mindate = 0
-    maxdate = 0
     mintemp = 100
     maxtemp = -100
 
 
-    with sqlite3.connect(dbname) as conn:
+    with sqlite3.connect(dbfile) as conn:
         curs=conn.cursor()
 
-        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}','-{2} hours') AND timestamp<=datetime('{1}') order by timestamp desc limit 10000".format(tdevice[0],now,interval)
+        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}') AND timestamp<=datetime('{2}') order by timestamp desc limit 10000".format(tdevice[0],starttime,endtime)
         curs.execute(cmd)
         rows=curs.fetchall()
-        endstamp = rows[0][0]
-        startstamp = rows[len(rows)-1][0]
-        endtime=date2num(datetime.datetime.strptime( endstamp, u"%Y-%m-%d %H:%M:%S.%f"))
-        starttime=date2num(datetime.datetime.strptime(startstamp, u"%Y-%m-%d %H:%M:%S.%f"))
-        actualtimespan=endtime-starttime
-
+        dates = []
         for row in rows:
             dt =date2num(datetime.datetime.strptime(row[0], u"%Y-%m-%d %H:%M:%S.%f"))
             dates.append(dt)
@@ -91,8 +99,7 @@ def get_tdata(interval,tdevice):
                 maxdate=dt
         avgtemp = "NA"
 
-
-    return dates,temperatures,mindate,mintemp,maxdate,maxtemp, avgtemp, starttime, endtime
+    return dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp
 
 
 
@@ -135,29 +142,6 @@ def create_table(dates,temperatures, mindate, maxdate, mintemp, maxtemp):
 
 
 
-
-# print the javascript to generate the chart
-# pass the table generated from the database info
-def print_graph_script(table):
-
-    # google chart snippet
-    chart_code=u"""
-    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
-    <script type="text/javascript">
-      google.load("visualization", "1", {packages:["corechart"]});
-      google.setOnLoadCallback(drawChart);
-      function drawChart() {
-        var data = google.visualization.arrayToDataTable([['Time', 'Temperature'],%s]);
-        var options = {title: 'Temperature'};
-        var chart = new google.visualization.ScatterChart(document.getElementById('chart_div'));
-        chart.draw(data, options);
-      }
-    </script>"""
-
-    print chart_code % (table)
-
-
-
 def timedeltatostring (timedelta):
     totalleft = timedelta*24
     hours = int (totalleft)
@@ -165,13 +149,13 @@ def timedeltatostring (timedelta):
     minutes = int(totalleft)
     totalleft = (totalleft-minutes)*60
     seconds = int(totalleft)
-    str = "{0:02.0f}:{1:02.0f}:{2:02.0f}".format(hours,minutes,seconds)
+    str = "{0:02.0f}:{1:02.0f}:{2:02.0f}".format(hours, minutes, seconds)
     return str
 
 # print the div that contains the graph
-def show_graph(starttime, endtime, tdevice):
-
-    print u"<h2>Temperature Chart for the last {0} for device {2} (id={1})</h2>".format(timedeltatostring(endtime-starttime),tdevice[0],tdevice[1])
+def show_graph_title(starttime, endtime, tdevice):
+    hours = (endtime - starttime).total_seconds()/3600
+    print u"<h2>Temperature Chart from {0} to {1} ({2:.0f} hours) for {4} (deviceid={3})</h2>".format((str(starttime))[:-10], (str(endtime))[:-10], hours, tdevice[0], tdevice[1])
     print u'<div id="chart_div" style="width: 1500px; height: 100px;"></div>'
 
 
@@ -206,38 +190,38 @@ def show_stats(dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp,
 
 
 
-def print_options_selector(timeinterval,deviceid):
+def print_options_selector(dbname, deviceid, hours, dbnames):
 
     print u"<form action=\"twebgui.py\" method=\"POST\">"
     print u" Show the temperature logs for "  
-    print u"<select name=\"timeinterval\">"
-    if timeinterval is not None:
+    print u"<select name=\"hours\">"
+    if hours is not None:
      
-        if timeinterval == u"30m":
+        if hours == u"30m":
             print u"<option value=\".5\" selected=\"selected\">the last 30 minutes</option>"
         else:
             print u"<option value=\".5\">the last 30 minutes hours</option>"
 
-        if timeinterval == u"1":
+        if hours == u"1":
             print u"<option value=\"1\" selected=\"selected\">the last 1 hours</option>"
         else:
             print u"<option value=\"1\">the last 1 hours</option>"
 
-        if timeinterval == u"6":
+        if hours == u"6":
             print u"<option value=\"6\" selected=\"selected\">the last 6 hours</option>"
         else:
             print u"<option value=\"6\">the last 6 hours</option>"
 
-        if timeinterval == u"12":
+        if hours == u"12":
             print u"<option value=\"12\" selected=\"selected\">the last 12 hours</option>"
         else:
             print u"<option value=\"12\">the last 12 hours</option>"
 
-        if timeinterval == u"24":
+        if hours == u"24":
             print u"<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
         else:
             print u"<option value=\"24\">the last 24 hours</option>"
-        ti = int(timeinterval)
+        ti = int(hours)
         strti = str(ti)
         if (ti > 0) and (ti < 100):
             print u"<option value=\""+strti+"\"selected=\"selected\">the last "+strti+" hours</option>"
@@ -253,11 +237,10 @@ def print_options_selector(timeinterval,deviceid):
     print u"</select>"
     
     print u" for device "
-    
     print u"<select name=\"deviceid\">"
-    with sqlite3.connect(dbname) as conn:
+    with sqlite3.connect(dbfile) as conn:
         curs = conn.cursor()
-        cmd = u"Select device, friendly_name from devices"
+        cmd = u"Select device, friendly_name from devices order by friendly_name"
         rows = curs.execute(cmd)
         for row in rows:
             if deviceid == row[0]:
@@ -265,44 +248,100 @@ def print_options_selector(timeinterval,deviceid):
             else:
                 print u"<option value=\"{0}\">{1}</option>".format(row[0],row[1])
     print u"</select>"
+
+    print u" in database "
+    print u"<select name=\"dbname\">"
+    for name in dbnames:
+        if name == dbname:
+            print u"<option value=\"{0}\" selected=\"selected\">{1}</option>".format(name, name)
+        else:
+            print u"<option value=\"{0}\">{1}</option>".format(name, name)
+    print u"</select>"
+
     print u"<input type=\"submit\" value=\"Display\">"
     print u"</form>"
 
 
-#return the option passed to the script
-def get_timeinterval():
-    timeinterval = unicode(24)
-    if form.getvalue(u'timeinterval'):
-        timeinterval = form.getvalue(u'timeinterval')
-        if timeinterval is None:
-            timeinterval = unicode(24)
-    return timeinterval
+#return the hours passed to the script
+def get_hours():
+    hours = unicode(24)
+    if form.getvalue(u'hours'):
+        hours = form.getvalue(u'hours')
+        if hours is None:
+            hours = unicode(24)
+    return hours
 
-def get_lastlogtime(tdevice):
-    cmd = u"Select timestamp from temperatures where device = '{0}' order by timestamp desc limit 1".format(tdevice[0])
-    with sqlite3.connect(dbname) as conn:
-        curs = conn.cursor()
-        rows = curs.execute(cmd)
-        for row in rows:
-            lastlogtime = row[0]
-            return lastlogtime
-    
+#returns dbname
+def get_dbname(dbnames):
+    dbname = 'no database'
+    if form.getvalue(u'dbname'):
+        dbname = form.getvalue(u'dbname')
+        if dbname in dbnames:
+            return dbname
+    if dbnames == None or len(dbnames)==0:
+        dbname = 'No databases found'
+    else:
+        dbname = dbnames[len(dbnames)-1]
+    return dbname
 
 #return the tdevice passed to the script
 def get_tdevice():
-    cmd = u"Select device, friendly_name from devices order by friendly_name limit 1"
+    global dbfile
     if form.getvalue(u'deviceid'):
         deviceid = form.getvalue(u'deviceid')
         cmd = u"Select device, friendly_name from devices where device = '{0}' limit 1".format(deviceid)
+        with sqlite3.connect(dbfile) as conn:
+            curs = conn.cursor()
+            rows = curs.execute(cmd)
+            if rows != None:
+                for row in rows:
+                    deviceid = row[0]
+                    friendly_name = row[1]
+                    return deviceid,friendly_name
     #print "cmd=",cmd                                                               #debugging
-    with sqlite3.connect(dbname) as conn:
+    cmd = u"Select device, friendly_name from devices order by friendly_name limit 1"  #defualt to the first one.
+    with sqlite3.connect(dbfile) as conn:
         curs = conn.cursor()
         rows = curs.execute(cmd)
         for row in rows:
             deviceid = row[0]
             friendly_name = row[1] 
             return deviceid,friendly_name
-        
+
+def get_endtime(tdevice, hours):
+        # endstamp = rows[0][0]
+        # startstamp = rows[len(rows)-1][0]
+        # endtime=date2num(datetime.datetime.strptime( endstamp, u"%Y-%m-%d %H:%M:%S.%f"))
+        # starttime=date2num(datetime.datetime.strptime(startstamp, u"%Y-%m-%d %H:%M:%S.%f"))
+        # actualtimespan=endtime-starttime
+
+        endtime = None
+        if form.getvalue(u'endtime'):
+            try:
+                stringendtime=form.getvalue(u'endtime')
+                endtime = dparser.parse(stringendtime)
+                endtime = datetime.datetime.strptime( endtime, u"%Y-%m-%d %H:%M:%S.%f")
+            except ValueError:
+                endtime = None
+                logger.debug('Value error parsing form endtime')
+        if endtime == None:
+            endstamp = get_lastlogtime(tdevice)
+            endtime = datetime.datetime.strptime( endstamp, u"%Y-%m-%d %H:%M:%S.%f")
+        hrs = float(hours)
+        tdelta = datetime.timedelta(hours=hrs)
+        starttime = endtime - tdelta
+        return starttime, endtime
+
+def get_lastlogtime(tdevice):
+    global dbfile
+    cmd = u"Select timestamp from temperatures where device = '{0}' order by timestamp desc limit 1".format(tdevice[0])
+    with sqlite3.connect(dbfile) as conn:
+        curs = conn.cursor()
+        rows = curs.execute(cmd)
+        for row in rows:
+            lastlogtime = row[0]
+            return lastlogtime
+
 # make the tlogx standard date time display string, input must not have the tz data
 def displaydatetime(string_date):
     dt =datetime.datetime.strptime(string_date, u"%Y-%m-%d %H:%M:%S.%f")
@@ -311,22 +350,30 @@ def displaydatetime(string_date):
 # main function
 # This is where the program starts 
 def main():
+    global dbfile
+
     #enable debugging
     cgitb.enable()
+
+    #setup global constant variables
+    dbpath, dbnames = get_dbnames()
 
     # print the HTTP header
     printHTTPheader()
 
-    #print form.getvalue('timeinterval'),form.getvalue('deviceid')               #debugging
-
     # get options that may have been passed to this script
-    timeinterval = get_timeinterval()
-    #print "timeinterval",timeinterval                                           #debugging
+    dbname = get_dbname(dbnames)
+    dbfile = os.path.join(dbpath, dbname)
+    logger.debug('using database=' + dbfile)
     tdevice = get_tdevice()
-    #print "tdevice", tdevice                                                   #debugging
+    logger.debug('tdevice={0}'.format(tdevice))
+    hours = get_hours()
+    logger.debug('hours=' + hours)
+    starttime, endtime = get_endtime(tdevice, hours)  #gets endtime from input or last db entry for device
+    logger.debug('starttime='+starttime.strftime("%Y-%m-%d %H:%M:%S")+', endtime='+endtime.strftime("%Y-%m-%d %H:%M:%S"))
 
     # get data from the database
-    dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp, starttime, endtime = get_tdata(timeinterval,tdevice)
+    dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp = get_tdata(tdevice, starttime, endtime)
 
     if len(dates) > 2:
         # convert the data into a table
@@ -346,10 +393,10 @@ def main():
     print u"<body>"
     print u"<h1>Raspberry Pi Temperature Logger</h1>"
     print u"<hr>"
-    print_options_selector(timeinterval,tdevice[0])
+    print_options_selector(dbname, tdevice[0], hours, dbnames)
     print u"<img src='../tchart.png'>"
 
-    show_graph(starttime, endtime, tdevice)
+    show_graph_title(starttime, endtime, tdevice)
     show_stats(dates, temperatures, str(num2date(mindate))[:-6], mintemp, str(num2date(maxdate))[:-6], maxtemp, avgtemp, starttime, endtime, tdevice )
     print u"</body>"
     print u"</html>"
@@ -358,6 +405,5 @@ def main():
 
 if __name__==u"__main__":
     main()
-
 
 
