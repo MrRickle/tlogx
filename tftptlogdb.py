@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python27
 __author__ = 'rick'
 import ftplib
 from ftplib import FTP
@@ -36,7 +36,7 @@ copied = False
 i=0
 while not copied and i<10:   #try a maximum of 10 times
     try:
-        with ftplib.FTP(ftpsite) as ftp:
+            ftp = ftplib.FTP(ftpsite)
             logger.debug('logging in')
             ftp.login(user, password)
             logger.debug ('logged in')
@@ -47,12 +47,14 @@ while not copied and i<10:   #try a maximum of 10 times
                 filesize = getSize(myfile)
                 logger.debug ('filesize is {0}'.format(filesize))
                 ftp.storbinary('STOR '+destfilename, myfile)
-            os.remove(destfilename)
             endtime = datetime.datetime.strptime(str(datetime.datetime.now()),u"%Y-%m-%d %H:%M:%S.%f")
             copytime = endtime - starttime
             seconds = copytime.total_seconds()
             logger.debug('It took {0} sec to copy {1} bytes from {2} to {3}'.format(seconds, filesize, filepath+filename, user+'@'+ftpsite+' '+spath+'/'+destfilename))
             copied = True;
+            os.remove(destfilename)
+            logger.debug ('romoved temp file')
+
     except ftplib.all_errors as e:
         logger.warn('Ftp fail -> '+ str(e))
         print( 'Ftp fail -> ', e )

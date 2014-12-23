@@ -1,5 +1,7 @@
 #!/home/rickldftp/anaconda/bin/python
+#!/home/rick/anaconda3/envs/py278/bin/python
 #!/C:Users\Rick\Anaconda\bin\python
+
 
 #this file gets copied to /var/www  (eventualy it should be the cgi-bin folder)
 
@@ -20,7 +22,6 @@ import sys
 import cgi
 import cgitb
 import os.path
-import requests
 import dateutil.parser as dparser
 
 import io
@@ -77,6 +78,8 @@ def get_tdata(tdevice, starttime, endtime):
     temperatures = []
     mintemp = 100
     maxtemp = -100
+    mintempdate = sys.float_info.max
+    maxtempdate = 0;
 
 
     with sqlite3.connect(dbfile) as conn:
@@ -87,24 +90,24 @@ def get_tdata(tdevice, starttime, endtime):
         rows=curs.fetchall()
         dates = []
         for row in rows:
-            dt =date2num(datetime.datetime.strptime(row[0], u"%Y-%m-%d %H:%M:%S.%f"))
+            dt = date2num(datetime.datetime.strptime(row[0], u"%Y-%m-%d %H:%M:%S.%f"))
             dates.append(dt)
             temp=float(row[1])
             temperatures.append(temp)
             if mintemp>temp:
                 mintemp=temp
-                mindate=dt
+                mintempdate=dt
             if maxtemp<temp:
                 maxtemp=temp
-                maxdate=dt
+                maxtempdate=dt
         avgtemp = "NA"
 
-    return dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp
+    return dates, temperatures, mintempdate, mintemp, maxtempdate, maxtemp, avgtemp
 
 
 
 # convert rows from database into a javascript table
-def create_table(dates,temperatures, mindate, maxdate, mintemp, maxtemp):
+def create_table(dates,temperatures):
     def Tf(Tc):
         return (Tc*9./5.)+32
     def update_ax2(ax):
@@ -123,7 +126,7 @@ def create_table(dates,temperatures, mindate, maxdate, mintemp, maxtemp):
     ax.autoscale_view()
     # ax.xaxis.set_major_locator(majorLocator)
     # ax.xaxis.set_major_formatter(majorFormatter)
-    
+
     #for the minor ticks, use no labels; default NullFormatter
     # ax.xaxis.set_minor_locator(minorLocator)
 
@@ -140,6 +143,32 @@ def create_table(dates,temperatures, mindate, maxdate, mintemp, maxtemp):
     #print (out)
 
 
+def getfurnaceontime(dates, temperatures, device_type):
+    if device_type != 'furnace':
+        return ''
+    furnaceonslope = 4000 #slope that says furnace has started. deg/day
+    furnaceoffslope = -400 #slope that says furnace has stopped.
+    furnaceontime = float(0)
+    furnaceison = False
+    for i in reversed(range(0,len(dates)-1)): # note we have sorted dates in descending order so newest is at the top.
+        tdelta = temperatures[i]-temperatures[i+1]
+        ddelta = dates[i]-dates[i+1]
+        slope = tdelta/ddelta
+        if furnaceison:
+            if (slope < furnaceoffslope):
+                furnaceison=False
+        else:
+            if (slope>furnaceonslope):   #add more conditions so we get the time after furnace is as hot as it gets.
+                furnaceison=True
+        if furnaceison:
+            furnaceontime = furnaceontime + ddelta
+    percent = int (furnaceontime / (dates[0]-dates[len(dates)-1])*100)
+
+    total_seconds = int(furnaceontime*24*60*60)
+    hours, remainder = divmod(total_seconds,60*60)
+    minutes, seconds = divmod(remainder,60)
+    hours ='{0:02.0f}:{1:02.0f}:{2:02.0f}'.format(hours,minutes,seconds)
+    return  "Furnace on time = "+hours+ ", "+str(percent)+"%"
 
 
 def timedeltatostring (timedelta):
@@ -161,18 +190,20 @@ def show_graph_title(starttime, endtime, tdevice):
 
 # connect to the db and show some stats
 # argument option is the number of hours
-def show_stats(dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp, starttime, endtime, tdevice):
+def show_stats(dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp, starttime, endtime, furnacestr, tdevice):
 
     rowstrmax=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(maxdate),maxtemp, maxtemp*9/5+32)
     rowstrmin=u"{0}&nbsp&nbsp&nbsp{1:6.2f} C {2:6.1f} F".format(displaydatetime(mindate),mintemp, mintemp*9/5+32)
 
-    print u"<hr>"
+    if furnacestr != '':
+        print u"<hr>"
+        print u"<h2>" + furnacestr + "</h2>"
 
+    print u"<hr>"
     print u"<h2>Minumum temperature&nbsp</h2>"
     print rowstrmin
     print u"<h2>Maximum temperature</h2>"
     print rowstrmax
-
     print u"<hr>"
 
     print u"<h2>Temperature Points:</h2>"
@@ -193,10 +224,10 @@ def show_stats(dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp,
 def print_options_selector(dbname, deviceid, hours, dbnames):
 
     print u"<form action=\"twebgui.py\" method=\"POST\">"
-    print u" Show the temperature logs for "  
+    print u" Show the temperature logs for "
     print u"<select name=\"hours\">"
     if hours is not None:
-     
+
         if hours == u"30m":
             print u"<option value=\".5\" selected=\"selected\">the last 30 minutes</option>"
         else:
@@ -221,9 +252,18 @@ def print_options_selector(dbname, deviceid, hours, dbnames):
             print u"<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
         else:
             print u"<option value=\"24\">the last 24 hours</option>"
+        if hours == u"48":
+            print u"<option value=\"48\" selected=\"selected\">the last 48 hours</option>"
+        else:
+            print u"<option value=\"48\">the last 48 hours</option>"
+
         ti = int(hours)
-        strti = str(ti)
-        if (ti > 0) and (ti < 100):
+	if ti>169:
+	    ti=169
+	if ti<0:
+	    ti=1
+        strti = '{0:03.1f}'.format(ti)
+        if (ti > 0) and (ti < 169):
             print u"<option value=\""+strti+"\"selected=\"selected\">the last "+strti+" hours</option>"
 
 
@@ -235,7 +275,7 @@ def print_options_selector(dbname, deviceid, hours, dbnames):
         print u"<option value=\"12\">the last 12 hours</option>"
         print u"<option value=\"24\" selected=\"selected\">the last 24 hours</option>"
     print u"</select>"
-    
+
     print u" for device "
     print u"<select name=\"deviceid\">"
     with sqlite3.connect(dbfile) as conn:
@@ -289,7 +329,7 @@ def get_tdevice():
     global dbfile
     if form.getvalue(u'deviceid'):
         deviceid = form.getvalue(u'deviceid')
-        cmd = u"Select device, friendly_name from devices where device = '{0}' limit 1".format(deviceid)
+        cmd = u"Select device, friendly_name, device_type from devices where device = '{0}' limit 1".format(deviceid)
         with sqlite3.connect(dbfile) as conn:
             curs = conn.cursor()
             rows = curs.execute(cmd)
@@ -297,16 +337,21 @@ def get_tdevice():
                 for row in rows:
                     deviceid = row[0]
                     friendly_name = row[1]
-                    return deviceid,friendly_name
+                    device_type = row[2]
+                    return deviceid,friendly_name, device_type
     #print "cmd=",cmd                                                               #debugging
-    cmd = u"Select device, friendly_name from devices order by friendly_name limit 1"  #defualt to the first one.
+    cmd = u"Select device, friendly_name, device_type from devices order by friendly_name" #default to the last one, first one will be a number!.
     with sqlite3.connect(dbfile) as conn:
         curs = conn.cursor()
         rows = curs.execute(cmd)
         for row in rows:
             deviceid = row[0]
-            friendly_name = row[1] 
-            return deviceid,friendly_name
+            friendly_name = row[1]
+            device_type = row[2]
+            if friendly_name == 'furnace':
+                 return deviceid,friendly_name, device_type  #testing without putting in parameters
+        return deviceid,friendly_name, device_type
+
 
 def get_endtime(tdevice, hours):
         # endstamp = rows[0][0]
@@ -345,17 +390,17 @@ def get_lastlogtime(tdevice):
 # make the tlogx standard date time display string, input must not have the tz data
 def displaydatetime(string_date):
     dt =datetime.datetime.strptime(string_date, u"%Y-%m-%d %H:%M:%S.%f")
-    return u"{0:%m-%d %H}:{0:%M}:{0:%S}".format(dt)    
+    return u"{0:%m-%d %H}:{0:%M}:{0:%S}".format(dt)
 
 # main function
-# This is where the program starts 
+# This is where the program starts
 def main():
     global dbfile
 
     #enable debugging
     cgitb.enable()
 
-    #setup global constant variables
+    #setup main constant variables
     dbpath, dbnames = get_dbnames()
 
     # print the HTTP header
@@ -373,15 +418,19 @@ def main():
     logger.debug('starttime='+starttime.strftime("%Y-%m-%d %H:%M:%S")+', endtime='+endtime.strftime("%Y-%m-%d %H:%M:%S"))
 
     # get data from the database
-    dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp = get_tdata(tdevice, starttime, endtime)
+    dates, temperatures, mintempdate, mintemp, maxtempdate, maxtemp, avgtemp = get_tdata(tdevice, starttime, endtime)
+
+    starttime = num2date(dates[len(dates)-1])  #adjust dates to actual
+    endtime = num2date(dates[0])
 
     if len(dates) > 2:
         # convert the data into a table
-        table=create_table(dates,temperatures, mindate, maxdate, mintemp, maxtemp )
+        table=create_table(dates,temperatures)
+        furnacestr = getfurnaceontime(dates,temperatures, tdevice[2])
     else:
         print u"No data found"
         return
-    
+
 
     # start printing the page
     print u"<html>"
@@ -397,7 +446,7 @@ def main():
     print u"<img src='../tchart.png'>"
 
     show_graph_title(starttime, endtime, tdevice)
-    show_stats(dates, temperatures, str(num2date(mindate))[:-6], mintemp, str(num2date(maxdate))[:-6], maxtemp, avgtemp, starttime, endtime, tdevice )
+    show_stats(dates, temperatures, str(num2date(mintempdate))[:-6], mintemp, str(num2date(maxtempdate))[:-6], maxtemp, avgtemp, starttime, endtime, furnacestr, tdevice )
     print u"</body>"
     print u"</html>"
 
