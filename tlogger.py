@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 import threading
 import os
 import time
+import matplotlib
+import matplotlib.dates
+import numpy
 
 from time import sleep
 import datetime
@@ -45,15 +48,14 @@ class loggingthread (threading.Thread):
         logger.info( "Exiting " + self.device_info.friendly_name)
 
 def do_log_loop(device_info):
-    lastlogdate, lastlogtemp = get_last_temperature(device_info.device_id)
-    lastslope = 0
+    lastlogdate, lastlogtemp = get_recent_logs(device_info.device_id)
     n=0
     while not (exitFlag or restartFlag):
         n=n+1
         if n>99:
             n=0
         logger.debug( "check{1:2.0f} {0: <12} ".format(device_info.friendly_name,n))
-        lastlogdate, lastlogtemp, lastlogslope = do_logging (device_info, lastlogdate, lastlogtemp, lastslope)
+        recentlogdates, recentlogtemps = do_logging (device_info, recentlogdates, recentlogtemps)
         logger.debug( "check{1:2.0f} {0: <12} done. \r".format(device_info.friendly_name,n),)
         sys.stdout.flush()
 
@@ -67,9 +69,10 @@ def db_add_device(device):
         t_check_interval = '15000'  #15 seconds
         t_delta_minimum = '180'  # .1 degree F
         log_maximum_interval = '3600000'  # 1 hour
+        device_type = ''
         with sqlite3.connect(dbname) as conn:
             curs=conn.cursor()
-            cmd = u"INSERT INTO devices values('{0}', '{1}','{2}', '{3}', '{4}')".format(device, device[3:],t_check_interval, t_delta_minimum, log_maximum_interval) #take off the 28- for the friendly name,
+            cmd = u"INSERT INTO devices values('{0}', '{1}','{2}', '{3}', '{4}', '{5}')".format(device, device[3:],t_check_interval, t_delta_minimum, log_maximum_interval, device_type ) #take off the 28- for the friendly name,
             curs.execute(cmd)
             conn.commit
             return True
@@ -182,37 +185,47 @@ def get_device_info(device_file):
 
 
 #returns the last temperature for this device
-def get_last_temperature(device):
+def get_recent_logs(device):
+    recentlogdates = []
+    recentlogtemps = []
+
     try:
         with sqlite3.connect(dbname) as conn:
             curs=conn.cursor()
-            cmd = u"Select timestamp, temperature from temperatures where device='{0}' order by timestamp desc limit 1".format(device)
-            curs.execute(cmd)
-            data = curs.fetchone()
-            if data is None:  #len(data)!=2:
-                lastdatestring = unicode(datetime.datetime.now())
-                lastdate = datetime.datetime.strptime(lastdatestring,u"%Y-%m-%d %H:%M:%S.%f")
-                return lastdate,0
-            lastdate = datetime.datetime.strptime(data[0],u"%Y-%m-%d %H:%M:%S.%f")
-            return lastdate,data[1]
+            cmd = u"Select timestamp, temperature from temperatures where device='{0}' order by timestamp desc limit 10".format(device)
+            for row in curs.execute(cmd):
+                recentlogdates.append = matplotlib.dates.date2num(row[0])
+                recentlogtemps.append = float(row[1])
+            if len(recentlogdates)==0:
+                recentlogdates.append(unicode(datetime.datetime.now()))
+                recentlogtemps.append(0)
+            if len(recentlogdates<10):
+                for i in range (len(recentlogdates), 10):
+                    recentlogdates.append(recentlogdates[i-1])+.000001 #inc date just a hair
+                    recentlogtemps.append(recentlogtemps[i-1])
+            # if data is None:  #len(data)!=2:
+            #     lastdatestring = unicode(datetime.datetime.now())
+            #     lastdate = datetime.datetime.strptime(lastdatestring,u"%Y-%m-%d %H:%M:%S.%f")
+            #     return lastdate,0
+            # lastdate = datetime.datetime.strptime(data[0],u"%Y-%m-%d %H:%M:%S.%f")
+            return recentlogdates, recentlogtemps
     except:
-        nowstring = unicode(datetime.datetime.now())
-        nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
-        return nowdate,0
+        # nowstring = unicode(datetime.datetime.now())
+        # nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
+        return None,None
 
-def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
+def do_logging(device_info, recentlogdates, recentlogtemps):
     temperature = get_temp(device_info.device_file)
     if temperature == None:      # Sometimes reads fail on the first attempt
         temperature = get_temp(device_info.temp_check_interval)# so we need to retry
     # Store the temperature in the database
+
     if temperature!= None:
         nowstring = unicode(datetime.datetime.now())
         nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
-        lastdate = lastlogdate
-        time_delta = nowdate - lastdate
-        timedeltaseconds = time_delta.total_seconds()
-        newslope = (temperature - lastlogtemp)/timedeltaseconds
-        predictedtemp = lastlogtemp + (timedeltaseconds * lastlogslope)
+        timedelta = nowdate - recentlogdates[0]
+        m,c = numpy.linalg(recentlogdates, recentlogtemps)
+        predictedtemp = m*nowdate+c
         tempdelta = temperature-predictedtemp
 
         temperature_delta_large_enough = abs(tempdelta) > float(device_info.temp_delta_min/1000)
@@ -221,13 +234,12 @@ def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
 #           print temperature, last_data[1],  temperature_delta_large_enough, nowdate, lastdate, time_delta_long_enough
         if temperature_delta_large_enough or time_delta_long_enough:
             log_temperature(nowstring, device_info.device_id, temperature)
-            lastlogslope = (newslope + lastlogslope)/2  #save  the slope for next time, but don't overshoot, makes it zigzag
-            lastlogdate = nowdate
-            lastlogtemp = temperature
+            recentlogdates.append(nowdate)
+            recentlogtemps.append(temperature)
             string = u"{0: <12} {1:5.1f}C {2:7.1f}F".format (device_info.friendly_name, temperature, (32 + (temperature * 9/5)))
             logger.info (string)
             sys.stdout.flush()
-    return lastlogdate, lastlogtemp, lastlogslope
+    return recentlogdates, recentlogtemps
 
 def get_devicefileslist():
     logger.debug("getting devicefileslist")
