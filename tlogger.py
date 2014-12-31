@@ -5,12 +5,18 @@ from __future__ import with_statement
 import sqlite3
 
 import logging
+
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(message)s')
+#logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
 logger = logging.getLogger(__name__)
 
 import threading
 import os
 import time
+import matplotlib
+import matplotlib.dates
+from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, date2num, num2date
+import numpy
 
 from time import sleep
 import datetime
@@ -22,6 +28,7 @@ from collections import namedtuple
 if platform.platform().startswith(u'Win'):
     import msvcrt
     logger.info(u'found Windows imported msvcrt')
+from pylab import *
 
 
 # global variables
@@ -45,15 +52,14 @@ class loggingthread (threading.Thread):
         logger.info( "Exiting " + self.device_info.friendly_name)
 
 def do_log_loop(device_info):
-    lastlogdate, lastlogtemp = get_last_temperature(device_info.device_id)
-    lastslope = 0
+    recentlogdates, recentlogtemps = get_recent_logs(device_info.device_id)
     n=0
     while not (exitFlag or restartFlag):
         n=n+1
         if n>99:
             n=0
         logger.debug( "check{1:2.0f} {0: <12} ".format(device_info.friendly_name,n))
-        lastlogdate, lastlogtemp, lastlogslope = do_logging (device_info, lastlogdate, lastlogtemp, lastslope)
+        recentlogdates, recentlogtemps = do_logging (device_info, recentlogdates, recentlogtemps)
         logger.debug( "check{1:2.0f} {0: <12} done. \r".format(device_info.friendly_name,n),)
         sys.stdout.flush()
 
@@ -67,9 +73,10 @@ def db_add_device(device):
         t_check_interval = '15000'  #15 seconds
         t_delta_minimum = '180'  # .1 degree F
         log_maximum_interval = '3600000'  # 1 hour
+        device_type = ''
         with sqlite3.connect(dbname) as conn:
             curs=conn.cursor()
-            cmd = u"INSERT INTO devices values('{0}', '{1}','{2}', '{3}', '{4}')".format(device, device[3:],t_check_interval, t_delta_minimum, log_maximum_interval) #take off the 28- for the friendly name,
+            cmd = u"INSERT INTO devices values('{0}', '{1}','{2}', '{3}', '{4}', '{5}')".format(device, device[3:],t_check_interval, t_delta_minimum, log_maximum_interval, device_type ) #take off the 28- for the friendly name,
             curs.execute(cmd)
             conn.commit
             return True
@@ -182,52 +189,78 @@ def get_device_info(device_file):
 
 
 #returns the last temperature for this device
-def get_last_temperature(device):
+def get_recent_logs(device):
+    recentlogdates = []
+    recentlogtemps = []
+    predictfitpoints = 3 #number of recent log points to use to predict next point.
+
     try:
         with sqlite3.connect(dbname) as conn:
             curs=conn.cursor()
-            cmd = u"Select timestamp, temperature from temperatures where device='{0}' order by timestamp desc limit 1".format(device)
-            curs.execute(cmd)
-            data = curs.fetchone()
-            if data is None:  #len(data)!=2:
-                lastdatestring = unicode(datetime.datetime.now())
-                lastdate = datetime.datetime.strptime(lastdatestring,u"%Y-%m-%d %H:%M:%S.%f")
-                return lastdate,0
-            lastdate = datetime.datetime.strptime(data[0],u"%Y-%m-%d %H:%M:%S.%f")
-            return lastdate,data[1]
+            cmd = u"Select timestamp, temperature from temperatures where device='{0}' order by timestamp desc limit {1:.0f}".format(device,predictfitpoints)
+            for row in curs.execute(cmd):
+                dt = date2num(datetime.datetime.strptime(row[0], u"%Y-%m-%d %H:%M:%S.%f"))
+                recentlogdates.append(dt)
+                recentlogtemps.append(float(row[1]))
+            if len(recentlogdates)==0:
+                recentlogdates.append(matplotlib.dates.date2num(datetime.datetime.now()))
+                recentlogtemps.append(0)
+            if len(recentlogdates)<predictfitpoints:
+                for i in range (len(recentlogdates), predictfitpoints):
+                    recentlogdates.append(recentlogdates[i-1]+.000001) #inc date just a hair
+                    recentlogtemps.append(recentlogtemps[i-1])
+            # if data is None:  #len(data)!=2:
+            #     lastdatestring = unicode(datetime.datetime.now())
+            #     lastdate = datetime.datetime.strptime(lastdatestring,u"%Y-%m-%d %H:%M:%S.%f")
+            #     return lastdate,0
+            # lastdate = datetime.datetime.strptime(data[0],u"%Y-%m-%d %H:%M:%S.%f")
+            rcds=recentlogdates[::-1]
+            rcts=recentlogtemps[::-1]
+            return rcds, rcts
     except:
-        nowstring = unicode(datetime.datetime.now())
-        nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
-        return nowdate,0
+        logger.critical('Exception getting recent logs')
+        # nowstring = unicode(datetime.datetime.now())
+        # nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
+        return None,None
 
-def do_logging(device_info, lastlogdate, lastlogtemp, lastlogslope ):
+def do_logging(device_info, recentlogdates, recentlogtemps):
+    if recentlogdates == None:
+        logger.critical("Could not start {0} because there are no recentlogdates".format(device_info.friendly_name))
+        return None, None
     temperature = get_temp(device_info.device_file)
     if temperature == None:      # Sometimes reads fail on the first attempt
         temperature = get_temp(device_info.temp_check_interval)# so we need to retry
     # Store the temperature in the database
+
     if temperature!= None:
         nowstring = unicode(datetime.datetime.now())
-        nowdate = datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f")
-        lastdate = lastlogdate
-        time_delta = nowdate - lastdate
-        timedeltaseconds = time_delta.total_seconds()
-        newslope = (temperature - lastlogtemp)/timedeltaseconds
-        predictedtemp = lastlogtemp + (timedeltaseconds * lastlogslope)
-        tempdelta = temperature-predictedtemp
+        nowdate = date2num(datetime.datetime.strptime(nowstring,u"%Y-%m-%d %H:%M:%S.%f"))
 
+        logger.debug('recentlogdates.len={0:.0f}'.format(len(recentlogdates)))
+        timedelta = nowdate - recentlogdates[len(recentlogdates)-1]
+
+        fit = polyfit(recentlogdates,recentlogtemps,1)
+        fit_fn = poly1d(fit) # fit_fn is now a function which takes in x and returns an estimate for y
+        predictedtemp = fit_fn(nowdate)
+        tempdelta = temperature-predictedtemp
         temperature_delta_large_enough = abs(tempdelta) > float(device_info.temp_delta_min/1000)
         maxtimebetweenlogs = float(device_info.log_max_interval/1000)
+        timedeltaseconds = timedelta*24*60*60
         time_delta_long_enough = timedeltaseconds > maxtimebetweenlogs
-#           print temperature, last_data[1],  temperature_delta_large_enough, nowdate, lastdate, time_delta_long_enough
+        logger.debug('{0} temp={1:.2f}, predictedtemp={2:.2f}, tempdelta={3:.2f} {4:},timedelta={5:4.0f} {6:}'.format\
+                    (device_info.friendly_name, temperature, predictedtemp, tempdelta, temperature_delta_large_enough,
+                     timedeltaseconds, time_delta_long_enough))
+        logger.debug(device_info.friendly_name+', '+str(recentlogdates)+str(recentlogtemps))
         if temperature_delta_large_enough or time_delta_long_enough:
             log_temperature(nowstring, device_info.device_id, temperature)
-            lastlogslope = (newslope + lastlogslope)/2  #save  the slope for next time, but don't overshoot, makes it zigzag
-            lastlogdate = nowdate
-            lastlogtemp = temperature
+            recentlogdates.append(nowdate)
+            recentlogdates.pop(0)
+            recentlogtemps.append(temperature)
+            recentlogtemps.pop(0)
             string = u"{0: <12} {1:5.1f}C {2:7.1f}F".format (device_info.friendly_name, temperature, (32 + (temperature * 9/5)))
             logger.info (string)
             sys.stdout.flush()
-    return lastlogdate, lastlogtemp, lastlogslope
+    return recentlogdates, recentlogtemps
 
 def get_devicefileslist():
     logger.debug("getting devicefileslist")
@@ -319,8 +352,8 @@ def main():
                 if not t.isAlive():
                     logger.debug(t.name + ' is not alive')
                     startLoggers = True
-
         logger.debug('mainlooplock done')
+
         # test = raw_input("")
         # if test == 'q' or test=='Q':
         #     exitFlag = True
