@@ -18,7 +18,6 @@ dbname = u'data/tlog.db'
 twebposturl = 'http://hallocks.us/cgi-bin/twebpost.py'
 twebposturl = 'http://hallocks.us/cgi-bin/hello.py'
 
-
 def get_local_logs(starttime):
     global dbname
     logs = []
