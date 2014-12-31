@@ -1,4 +1,6 @@
-__author__ = 'rick'
+#!/home/rickldftp/anaconda/bin/python
+# !/home/rick/anaconda3/envs/py278/bin/python
+# !/C:Users\Rick\Anaconda\bin\python__author__ = 'rick'
 
 import cgi
 
@@ -99,7 +101,7 @@ def main():
 
     # print the HTTP header
     printHTTPheader()
-    print 'success'
+    print 'wrote {0}, {1}, {2}, {3}'.format(dbfile, timestamp, deviceid, temperature)
     sys.stdout.flush()
 
 
