@@ -15,7 +15,7 @@ import numpy
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates
-from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, tdnum, num2date
+from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, date2num, num2date
 
 from pylab import savefig
 from optparse import OptionParser
