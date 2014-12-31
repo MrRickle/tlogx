@@ -1,7 +1,6 @@
 #!/C:Users\Rick\Anaconda\bin\python
 # !/home/rickldftp/anaconda/bin/python
 # !/home/rick/anaconda3/envs/py278/bin/python
-
 # __author__ = 'Rick'
 
 
