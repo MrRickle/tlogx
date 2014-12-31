@@ -47,7 +47,7 @@ def get_dbfile():
             dbfile = os.path.join(path, dbname)
             return dbfile
     dbfile = os.path.join(path, 'tlog.db')
-    return dbfile   #we will return a file so we can test without data
+    return dbfile  # we will return a file so we can test without data
 
 
 def get_timestamp():
@@ -56,17 +56,18 @@ def get_timestamp():
         return timestamp
     return None
 
+
 def get_newest_row():
-        cmd = u"select timestamp, device, temperature from temperatures order by timestamp desc limit 1"
-        with sqlite3.connect(dbfile) as conn:
-            curs = conn.cursor()
-            rows = curs.execute(cmd)
-            if rows != None:
-                for row in rows:
-                    timestamp = row[0]
-                    deviceid = row[1]
-                    temperature = row[2]
-                    return timestamp, deviceid, temperature
+    cmd = u"select timestamp, device, temperature from temperatures order by timestamp desc limit 1"
+    with sqlite3.connect(dbfile) as conn:
+        curs = conn.cursor()
+        rows = curs.execute(cmd)
+        if rows != None:
+            for row in rows:
+                timestamp = row[0]
+                deviceid = row[1]
+                temperature = row[2]
+                return timestamp, deviceid, temperature
 
 #return the tdevice passed to the script
 def get_tdevice():
@@ -109,15 +110,16 @@ def main():
             if temperature != None:
                 dbwrite(dbfile, timestamp, deviceid, temperature)
                 succeeded = True
-    #get the newest row to verify what was written, and so the poster can know what to post next
+    # get the newest row to verify what was written, and so the poster can know what to post next
     timestamp, deviceid, temperature = get_newest_row()
 
-# print the HTTP header
+    # print the HTTP header
     print u"Content-type: text/html\n\n"
     # print the page body
     print u"<body>"
     print u"<h1>tlogupdate data</h1>"
-    info = u'dbfile="{0}", timestamp="{1}", deviceid="{2}", temperature="{3}"'.format(dbfile, timestamp, deviceid, temperature)
+    info = u'dbfile="{0}", timestamp="{1}", deviceid="{2}", temperature="{3}"'.format(dbfile, timestamp, deviceid,
+                                                                                      temperature)
     print info
     print u"</body>"
     print u"</html>"
