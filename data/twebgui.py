@@ -88,7 +88,7 @@ def get_tdata(tdeviceId, starttime, endtime):
     with sqlite3.connect(dbfile) as conn:
         curs = conn.cursor()
 
-        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}') AND timestamp<=datetime('{2}') order by timestamp limit 10000".format(
+        cmd = u"SELECT timestamp, temperature FROM  temperatures  where device = '{0}' and timestamp>=datetime('{1}') AND timestamp<=datetime('{2}') order by timestamp limit 30000".format(
             tdeviceId, starttime, endtime)
         curs.execute(cmd)
         rows = curs.fetchall()
@@ -135,7 +135,8 @@ def create_table(dates, temperatures, heaterdates, heateronpoints):
     ax.callbacks.connect("ylim_changed", update_ax2)
     ax.plot_date(dates, temperatures, u'b-')
     if heateronpoints != None:
-        ax.plot_date(heaterdates, heateronpoints, u'r-')
+	if len(heateronpoints)<1000:
+            ax.plot_date(heaterdates, heateronpoints, u'r-')
     ax.autoscale_view()
     # ax.xaxis.set_major_locator(majorLocator)
     # ax.xaxis.set_major_formatter(majorFormatter)
@@ -161,7 +162,7 @@ def create_table(dates, temperatures, heaterdates, heateronpoints):
 def getheaterontime(dates, temperatures, device_type):
     if device_type != 'heater':
         return None, None, None
-    heateronslope = 3000  # slope that says heater has started. deg/day
+    heateronslope = 2000  # slope that says heater has started. deg/day
     heateroffslope = -400  # slope that says heater has stopped.
     heaterontime = float(0)
     heaterison = False
@@ -175,7 +176,11 @@ def getheaterontime(dates, temperatures, device_type):
     for i in (range(0, len(dates) - 1)):
         tdelta = temperatures[i + 1] - temperatures[i]
         ddelta = dates[i + 1] - dates[i]
-        slope = tdelta / ddelta
+        try:
+            slope = tdelta / ddelta
+        except (ZeroDivisionError) as error:
+            logger.debug('Exception, ddelta to small')
+            slope = 0
         if heaterison:
             if (slope < heateroffslope):
                 heaterison = False
@@ -249,17 +254,19 @@ def show_stats(dates, temperatures, mindate, mintemp, maxdate, maxtemp, avgtemp,
     rowstrmax = u"{2:6.1f}F ({1:5.2f}C) at {0}".format(displaydatetime(maxdate), maxtemp, maxtemp * 9 / 5 + 32)
     rowstrmin = u"{2:6.1f}F ({1:5.2f}C) at {0}".format(displaydatetime(mindate), mintemp, mintemp * 9 / 5 + 32)
 
-    print u'<h2>'
     if furnaceontime != None and heatingdegreedays != None:
+        print u'<h3>'
         furnacepercent = int(furnaceontime / (dates[len(dates) - 1] - dates[0]) * 100)
         furnacehours = datstr(furnaceontime)
-        print u'Heat time={0} ({1:.0f}% '.format(furnacehours, furnacepercent)
-        print u'Heat degree days={0:.2f} HeatTime/KDegDay={1:.6f}</h2>'.format(heatingdegreedays * 9 / 5,
+        print u'Heat time={0} ({1:.0f}%)'.format(furnacehours, furnacepercent)
+        print u'</h3>'
+        print u'<h3>'
+        print u'Heat degree days={0:.2f}, HeatTime/KDegDay={1:.6f}</h2>'.format(heatingdegreedays * 9 / 5,
                                                                                1000 * furnaceontime / heatingdegreedays)
-    print u'</h2>'
-    print '<h2>Low {0}, High {1}</h2>'.format(rowstrmin, rowstrmax)
+        print u'</h3>'
+    print '<h3>Low {0}, High {1}</h3>'.format(rowstrmin, rowstrmax)
 
-    print u"<h2>Temperature Points:</h2>"
+    print u"<h3>Temperature Points:</h3>"
     print u"<table>"
     print u"<tr><td><strong>Date/Time</strong></td><td><strong>Temp C</strong></td><td><strong>Temp F</strong></td></tr>"
 
